@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: routpass
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: routpass_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U routpass -d routpass_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # routpass_app is a non-superuser role subject to RLS — used by the live app.
+      # Migrations use routpass (superuser) via alembic.ini / DATABASE_ADMIN_URL.
+      DATABASE_URL: postgresql+asyncpg://routpass_app:secret_app@postgres:5432/routpass_db
+      DATABASE_ADMIN_URL: postgresql+asyncpg://routpass:secret@postgres:5432/routpass_db
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_ALGORITHM: HS256
+      ARKESEL_API_KEY: ""
+      ARKESEL_SENDER_ID: RoutePass
+      PAYSTACK_SECRET_KEY: ""
+      ENVIRONMENT: development
+      DEBUG: "true"
+    volumes:
+      # Mount source for hot-reload
+      - ./apps/api:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  redis_data:

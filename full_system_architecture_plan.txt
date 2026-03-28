@@ -1,0 +1,236 @@
+RoutePass — Full System Architecture Plan
+Context
+RoutePass is a multi-tenant SaaS platform replacing manual paper-based bus ticketing and parcel tracking in Ghana. The core problem: parcels are misrouted (e.g., a Prestea parcel sent to Asanko) because there is no validation at the point of loading. The system must provide: real-time scan-to-load validation with instant error alerts, automated SMS notifications via Arkesel, and a web dashboard for station managers — all scoped by transport company (multi-tenant).
+
+This is a greenfield project. Only a README and conversation.md currently exist.
+
+Confirmed Tech Stack
+Backend: FastAPI (Python, async), PostgreSQL, Alembic migrations
+Web Frontend: Next.js (latest/App Router), TypeScript, TailwindCSS, shadcn/ui
+Mobile: Flutter or React Native — to be decided later
+SMS: Arkesel API (Ghana)
+Payments: Paystack / Flutterwave (MoMo)
+Repository Structure (Monorepo)
+routpass/
+├── .env.example
+├── docker-compose.yml          # Postgres + Redis (local dev infra only)
+├── apps/
+│   ├── api/                    # FastAPI backend
+│   │   ├── pyproject.toml
+│   │   ├── alembic.ini
+│   │   ├── alembic/versions/
+│   │   └── app/
+│   │       ├── main.py         # App factory, routers, middleware, CORS
+│   │       ├── config.py       # Pydantic Settings (typed env vars)
+│   │       ├── database.py     # Async SQLAlchemy engine + session
+│   │       ├── models/         # SQLAlchemy ORM (one file per domain)
+│   │       ├── schemas/        # Pydantic v2 request/response schemas
+│   │       ├── routers/        # FastAPI routers (one per domain)
+│   │       ├── services/       # Business logic (no direct DB calls)
+│   │       ├── integrations/   # Arkesel, Paystack, Flutterwave clients
+│   │       ├── dependencies/   # Depends() functions (auth, db, tenant)
+│   │       ├── middleware/     # RLS middleware, request ID
+│   │       └── utils/          # phone.py, pdf.py, pagination.py
+│   │
+│   └── web/                    # Next.js dashboard
+│       └── src/
+│           ├── app/
+│           │   ├── (auth)/login/        # Login page
+│           │   ├── (dashboard)/         # Protected layout + sidebar
+│           │   │   ├── dashboard/       # Stats overview
+│           │   │   ├── parcels/         # CRUD + scan-to-load
+│           │   │   ├── trips/           # Trips + manifest
+│           │   │   └── tickets/         # Seat selection
+│           │   └── track/[id]/          # Public tracking (no auth)
+│           ├── components/
+│           │   ├── ui/                  # shadcn/ui primitives
+│           │   ├── parcels/             # parcel-form, parcel-table, status-timeline
+│           │   ├── trips/               # trip-form, manifest-view, scan-loader
+│           │   └── shared/             # phone-input, station-select, etc.
+│           ├── lib/                    # api-client.ts, auth.ts, constants.ts
+│           ├── hooks/                  # TanStack Query hooks
+│           └── types/                  # api.generated.ts (from openapi-typescript)
+│
+├── infrastructure/
+│   └── scripts/
+│       ├── seed_db.py          # Demo data: stations, company, admin user
+│       └── generate_types.sh  # openapi-typescript → types/api.generated.ts
+└── .github/workflows/
+    ├── api-ci.yml              # pytest + ruff + mypy
+    └── web-ci.yml              # tsc + next build
+Database Schema
+Core Tables
+companies       -- Tenants (VIP, STC, etc.) + subdomain + api_key
+stations        -- company_id FK, name, location_code, is_hub, search_aliases[]
+vehicles        -- plate_number, capacity, company_id
+trips           -- vehicle_id, departure/destination station_id, departure_time, status
+parcels         -- tracking_number, sender/receiver info, origin/destination station_id,
+                --   current_trip_id, status, otp_code, otp_expires_at
+tickets         -- trip_id, passenger_name, seat_number, fare, payment_ref
+users           -- company_id, station_id, role, phone, hashed_password
+tracking_sequences -- company_id → last_serial (atomic counter for tracking numbers)
+sms_logs        -- parcel_id, event_type, recipient, status, arkesel_message_id
+payment_events  -- provider_event_id (idempotency), ticket_id, status
+Parcel Status Lifecycle
+pending → in_transit → arrived → picked_up
+
+Multi-Tenancy
+Every major table has company_id FK
+PostgreSQL Row-Level Security (RLS) policies filter by app.current_company_id session variable
+get_db() dependency sets this variable at the start of each authenticated request
+super_admin role bypasses the RLS filter entirely
+Migrations (Alembic)
+Migration 1: Create all tables + indexes (idx_parcel_tracking, idx_parcel_phone)
+Migration 2: Enable RLS + create isolation policies (separate from table creation for easy rollback)
+Authentication & Authorization
+JWT Payload:
+
+{
+  "sub": "user-uuid",
+  "company_id": 3,
+  "company_code": "STC",
+  "station_id": 12,
+  "role": "station_clerk",
+  "exp": 1234567890
+}
+Role Hierarchy:
+
+Role	Scope
+super_admin	All companies, bypasses RLS
+company_admin	All stations in their company
+station_manager	Their station only
+station_clerk	Their station, limited writes
+Public	Tracking endpoint only (no JWT)
+Libraries: python-jose[cryptography] (JWT), passlib[bcrypt] (passwords), next-auth v5 (web session)
+
+API Design
+Base: /api/v1/
+
+Method	Endpoint	Auth	Description
+POST	/auth/login	Public	Returns access + refresh tokens
+GET	/auth/me	User	Current user profile
+GET	/track/{id}	Public	Sanitized parcel status for customers
+POST	/parcels	Clerk	Create parcel, returns QR + tracking number
+PATCH	/parcels/load	Clerk	Scan-to-load: validates destination match
+PATCH	/parcels/unload	Clerk	Mark arrived, generates + sends OTP
+POST	/parcels/collect	Clerk	Verify OTP → picked_up
+GET	/stations/{id}/pending-parcels	Manager	Dashboard inventory view
+POST	/trips	Manager	Create trip/schedule
+GET	/trips/{id}/manifest	Manager	Downloadable PDF manifest
+POST	/tickets	Clerk	Create ticket + initiate payment
+POST	/webhooks/paystack	System	HMAC-verified payment callback
+Tracking Number Format: RP-{COMPANY_CODE}-{YEAR}-{ZERO_PADDED_SERIAL} (e.g., RP-STC-2026-00247) Generated via atomic SELECT ... FOR UPDATE on tracking_sequences table.
+
+Key Business Logic
+Scan-to-Load (The Error Preventer)
+PATCH /parcels/load { parcel_id, trip_id }
+  → fetch parcel.destination_station_id
+  → fetch trip.destination_station_id
+  → IF mismatch: return HTTP 400 { DESTINATION_MISMATCH, correct_dest, bus_dest }
+  → ELSE: UPDATE parcel status='in_transit', current_trip_id=trip_id
+  → BackgroundTask: send_arkesel_sms(receiver_phone, "Your parcel is on Bus ...")
+The HTTP 400 triggers a RED alert + vibrate in the mobile/web UI.
+
+OTP Collection Flow
+Clerk scans parcel as arrived → system generates 6-digit OTP, stores with 15min expiry
+Arkesel SMS sent to receiver: "Your parcel is ready. Collection code: 847291"
+Receiver provides OTP at counter → POST /parcels/collect
+System verifies OTP + expiry → status = picked_up
+Brute-force protection: lock after 5 wrong attempts
+SMS Strategy (Arkesel)
+All SMS sends run in FastAPI BackgroundTasks — never blocking the clerk's UI.
+
+Event	Recipient	Message
+Parcel logged	Receiver	"A parcel from {sender} is logged for {destination}. Track: {id}"
+Loaded on bus	Receiver	"Your parcel is on Bus {plate} heading to {destination}"
+Arrived	Receiver	"Your parcel arrived at {station}. Collection code: {OTP}"
+Phone normalization (critical for Ghana): 0541234567 / +233541234567 / 00233541234567 → 233541234567 Handled in utils/phone.py. Validated at Pydantic schema layer before hitting Arkesel.
+
+Frontend Architecture (Next.js)
+Auth: NextAuth v5 calls FastAPI /auth/login, stores JWT in encrypted session cookie
+Data fetching: TanStack Query v5 with staleTime: 30_000 (usable during brief connectivity drops)
+Forms: react-hook-form + zod (validation mirrors Pydantic schemas)
+Types: openapi-typescript generates api.generated.ts from FastAPI's /openapi.json
+QR scanning: html5-qrcode (camera-based, works on Android tablets at stations)
+Offline indicator: navigator.onLine banner so clerks know when to retry
+Scan-to-Load UX:
+
+GREEN banner: "VALID — Load onto Bus {plate}"
+RED banner + shake animation: "WRONG BUS — This parcel goes to Prestea, this bus goes to Asanko"
+YELLOW banner: "No connection — retrying..." (network error, NOT a business error)
+Key Packages
+Backend
+
+fastapi[standard], sqlalchemy[asyncio], asyncpg, alembic
+pydantic-settings, python-jose[cryptography], passlib[bcrypt]
+httpx (async HTTP for Arkesel/Paystack), qrcode[pil], reportlab
+ruff (lint), pytest, pytest-asyncio
+Frontend
+
+next, typescript, tailwindcss, shadcn/ui
+@tanstack/react-query, react-hook-form, zod
+next-auth, @tanstack/react-table, html5-qrcode, recharts
+openapi-typescript (type generation), lucide-react, sonner
+Implementation Order
+Phase 1 — Foundation (Week 1-2)
+Monorepo structure + docker-compose.yml (Postgres + Redis)
+apps/api: config, database, all SQLAlchemy models
+Alembic migration 1: tables + indexes
+Alembic migration 2: RLS policies
+utils/phone.py with tests (Ghana edge cases)
+Seed script: demo company (STC), 3 stations, admin user
+Phase 2 — Auth (Week 2-3)
+POST /auth/login + GET /auth/me
+get_current_user dependency + role guards
+get_db() dependency with RLS session variable injection
+Verification: clerk from Company A cannot read Company B's parcels
+Phase 3 — Core Parcel Module (Week 3-5)
+services/tracking_number.py (atomic serial)
+services/qr_service.py (base64 QR PNG)
+POST /parcels — create + log + return QR
+PATCH /parcels/load — scan-to-load with mismatch check
+PATCH /parcels/unload — mark arrived + generate OTP
+POST /parcels/collect — OTP verify + picked_up
+GET /track/{id} — public tracking (sanitized response)
+ParcelLog audit trail (every status change + clerk_id + timestamp)
+Phase 4 — SMS (Week 5)
+integrations/arkesel.py + sms_logs table migration
+Wire SMS as BackgroundTasks at load/unload/collect events
+End-to-end test: 054 → 233 normalization → Arkesel sandbox
+Phase 5 — Trips + Tickets (Week 6-7)
+Trip CRUD + status transitions
+Ticket creation + seat conflict prevention
+GET /trips/{id}/manifest → PDF download
+Phase 6 — Payments (Week 7-8)
+POST /tickets/initiate-payment → Paystack charge
+POST /webhooks/paystack with HMAC verification + idempotency
+Phase 7 — Web Dashboard (Week 8-11)
+Next.js scaffold + Tailwind + shadcn/ui
+NextAuth v5 + protected layout
+Dashboard stats page
+Parcel list + create form + status timeline
+Scan-to-Load page (camera QR scanner)
+Trip list + manifest view
+Ticket seat-selection grid
+Public /track/[id] page
+generate_types.sh — wire all TypeScript types
+Phase 8 — Hardening (Week 11-12)
+GitHub Actions CI (both API and web)
+Rate limiting on public tracking endpoint
+OTP brute-force lockout
+Arkesel balance monitoring
+Structured JSON logging (structlog)
+Exponential backoff on scan-to-load frontend (3 retries, 10s window)
+Ghana-Specific Considerations
+Phone prefixes: MTN (024/054/055/059), Vodafone (020/050), AirtelTigo (026/056/027) — validate at schema layer
+MoMo UX: Show 60-90s "Waiting for payment..." spinner; always verify via provider's check API before declaring failure
+Station aliases: search_aliases TEXT[] column so "Neoplan" finds "Accra-Neoplan"
+Idempotency on parcel create: Client-generated Idempotency-Key header prevents duplicates on retry after power outage mid-transaction
+UI accessibility: Large touch targets (≥48px), searchable dropdowns (not free text), auto-fill returning customers by phone number
+Verification (End-to-End Test Scenarios)
+Mismatch prevention: Create parcel → destination=Prestea. Create trip → destination=Asanko. PATCH /parcels/load → must return HTTP 400 with DESTINATION_MISMATCH
+Happy path: Same destination → parcel status becomes in_transit, SMS queued
+OTP collection: Unload parcel → status arrived, OTP generated. Submit wrong OTP → 403. Submit correct OTP → picked_up
+Tenant isolation: Login as Company A clerk → GET /parcels must return 0 results for Company B's parcels
+Public tracking: GET /track/RP-STC-2026-00001 returns status without exposing internal IDs or OTP
+Phone normalization: 0541234567 stored and sent to Arkesel as 233541234567
