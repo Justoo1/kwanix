@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, get_db_for_user
 from app.integrations.arkesel import (
+    dispatch_sms,
     msg_parcel_arrived,
     msg_parcel_in_transit,
     msg_parcel_logged,
-    send_sms,
 )
 from app.models.parcel import Parcel, ParcelStatus
 from app.models.user import User
@@ -123,9 +123,11 @@ async def create_parcel(
     await db.commit()
     await db.refresh(parcel, ["origin_station", "destination_station"])
 
-    # SMS in background
+    # SMS in background — also persists outcome to sms_logs
     background_tasks.add_task(
-        send_sms,
+        dispatch_sms,
+        db,
+        parcel.id,
         parcel.receiver_phone,
         msg_parcel_logged(
             parcel.sender_name,
@@ -154,7 +156,9 @@ async def load_parcel(
     trip = parcel.current_trip
     await db.refresh(trip, ["vehicle"])
     background_tasks.add_task(
-        send_sms,
+        dispatch_sms,
+        db,
+        parcel.id,
         parcel.receiver_phone,
         msg_parcel_in_transit(
             trip.vehicle.plate_number,
@@ -183,7 +187,9 @@ async def unload_parcel_endpoint(
     await db.refresh(parcel, ["destination_station"])
 
     background_tasks.add_task(
-        send_sms,
+        dispatch_sms,
+        db,
+        parcel.id,
         parcel.receiver_phone,
         msg_parcel_arrived(
             parcel.destination_station.name,
