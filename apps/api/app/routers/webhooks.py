@@ -34,7 +34,7 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
     ).hexdigest()
 
     if not hmac.compare_digest(expected, signature):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
 
     payload = json.loads(body_bytes)
     event_id = payload.get("id") or payload.get("data", {}).get("id")
@@ -59,8 +59,10 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
         result = await db.execute(select(Ticket).where(Ticket.payment_ref == payment_ref))
         ticket = result.scalar_one_or_none()
 
-    if ticket and payment_status == "success":
+    if ticket and event_type == "charge.success":
         ticket.payment_status = PaymentStatus.paid
+    elif ticket and event_type == "charge.failed":
+        ticket.payment_status = PaymentStatus.failed
 
     # 4. Record event
     event = PaymentEvent(

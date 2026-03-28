@@ -1,12 +1,15 @@
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, get_db_for_user
-from app.models.ticket import Ticket, TicketStatus
+from app.dependencies.auth import get_current_user, get_db_for_user, require_role
+from app.integrations.paystack import initialize_transaction
+from app.models.ticket import PaymentStatus, Ticket, TicketStatus
 from app.models.trip import Trip, TripStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()
@@ -87,6 +90,61 @@ async def create_ticket(
     await db.commit()
     await db.refresh(ticket)
     return ticket
+
+
+class InitiatePaymentRequest(BaseModel):
+    email: str | None = None  # Optional — falls back to {phone}@routepass.app
+
+
+class InitiatePaymentResponse(BaseModel):
+    authorization_url: str
+    reference: str
+
+
+@router.post(
+    "/{ticket_id}/initiate-payment",
+    response_model=InitiatePaymentResponse,
+)
+async def initiate_payment(
+    ticket_id: int,
+    body: InitiatePaymentRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.payment_status != PaymentStatus.pending:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot initiate payment: payment_status is '{ticket.payment_status.value}'",
+        )
+
+    email = body.email or f"{ticket.passenger_phone}@routepass.app"
+    reference = f"RP-{ticket.id}-{uuid4().hex[:8]}"
+    amount_pesewas = int(ticket.fare_ghs * 100)
+
+    data = await initialize_transaction(
+        amount_kobo=amount_pesewas,
+        email=email,
+        reference=reference,
+    )
+
+    ticket.payment_ref = reference
+    await db.commit()
+
+    return InitiatePaymentResponse(
+        authorization_url=data["authorization_url"],
+        reference=reference,
+    )
 
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
