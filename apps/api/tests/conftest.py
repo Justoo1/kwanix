@@ -40,10 +40,20 @@ async def create_test_tables():
 
 @pytest.fixture
 async def db() -> AsyncSession:
-    """Yields a fresh DB session that is rolled back after each test."""
-    async with TestSessionLocal() as session:
-        yield session
-        await session.rollback()
+    """
+    Yields a DB session backed by a connection-level transaction rolled back
+    after each test. Endpoint handlers that call session.commit() only release
+    a savepoint; the outer connection transaction is never committed, so all
+    fixture data is fully undone at teardown regardless of what the handler does.
+    """
+    async with test_engine.connect() as conn:
+        await conn.begin()
+        session = AsyncSession(conn, expire_on_commit=False)
+        try:
+            yield session
+        finally:
+            await session.close()
+            await conn.rollback()
 
 
 # ── Seed helpers ──────────────────────────────────────────────────────────────

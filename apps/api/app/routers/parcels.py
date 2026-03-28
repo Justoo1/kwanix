@@ -152,6 +152,7 @@ async def load_parcel(
     await db.refresh(parcel, ["destination_station", "current_trip"])
 
     trip = parcel.current_trip
+    await db.refresh(trip, ["vehicle"])
     background_tasks.add_task(
         send_sms,
         parcel.receiver_phone,
