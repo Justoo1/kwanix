@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, get_db_for_user
 from app.models.ticket import Ticket, TicketStatus
+from app.models.trip import Trip, TripStatus
 from app.models.user import User
 from app.utils.phone import normalize_gh_phone
 
@@ -31,6 +32,7 @@ class TicketResponse(BaseModel):
     id: int
     trip_id: int
     passenger_name: str
+    passenger_phone: str
     seat_number: int
     fare_ghs: float
     status: str
@@ -45,18 +47,31 @@ async def create_ticket(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    # Check seat is not already taken for this trip
+    # Validate trip exists and is accepting passengers
+    trip_result = await db.execute(select(Trip).where(Trip.id == body.trip_id))
+    trip = trip_result.scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    if trip.status != TripStatus.loading:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trip is not accepting passengers (status: {trip.status.value})",
+        )
+
+    # Check seat not already taken — SELECT FOR UPDATE prevents race conditions
     existing = await db.execute(
-        select(Ticket).where(
+        select(Ticket)
+        .where(
             Ticket.trip_id == body.trip_id,
             Ticket.seat_number == body.seat_number,
             Ticket.status != TicketStatus.cancelled,
         )
+        .with_for_update()
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Seat {body.seat_number} is already booked for this trip.",
+            detail={"code": "SEAT_TAKEN", "seat_number": body.seat_number},
         )
 
     ticket = Ticket(
