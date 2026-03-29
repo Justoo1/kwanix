@@ -3,19 +3,30 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies.auth import get_current_user, get_db_for_user
+from app.dependencies.auth import get_current_user, get_db_for_user, require_role
 from app.models.parcel import Parcel, ParcelStatus
 from app.models.station import Station
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter()
+
+
+class CreateStationRequest(BaseModel):
+    name: str
+    location_code: str | None = None
+    contact_number: str | None = None
+    address: str | None = None
+    is_hub: bool = False
 
 
 class StationResponse(BaseModel):
     id: int
     name: str
     location_code: str | None
+    contact_number: str | None
+    address: str | None
     is_hub: bool
+    is_active: bool
 
     model_config = {"from_attributes": True}
 
@@ -27,12 +38,42 @@ class PendingParcelSummary(BaseModel):
     fee_ghs: float
 
 
+_MANAGER_ROLES = (UserRole.station_manager, UserRole.company_admin, UserRole.super_admin)
+
+
+@router.post(
+    "",
+    response_model=StationResponse,
+    status_code=201,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def create_station(
+    body: CreateStationRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    station = Station(
+        company_id=current_user.company_id,
+        name=body.name,
+        location_code=body.location_code,
+        contact_number=body.contact_number,
+        address=body.address,
+        is_hub=body.is_hub,
+    )
+    db.add(station)
+    await db.commit()
+    await db.refresh(station)
+    return station
+
+
 @router.get("", response_model=list[StationResponse])
 async def list_stations(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Station).where(Station.is_active == True))  # noqa: E712
+    result = await db.execute(
+        select(Station).where(Station.is_active == True).order_by(Station.name)  # noqa: E712
+    )
     return result.scalars().all()
 
 

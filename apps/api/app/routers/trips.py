@@ -46,6 +46,7 @@ class CreateTripRequest(BaseModel):
     destination_station_id: int
     departure_time: datetime
     base_fare_ghs: float | None = None
+    booking_open: bool = False
 
 
 class TripResponse(BaseModel):
@@ -55,7 +56,10 @@ class TripResponse(BaseModel):
     destination_station_id: int
     departure_time: datetime
     status: str
+    booking_open: bool = False
+    price_ticket_base: float | None = None
     vehicle_plate: str | None = None
+    vehicle_capacity: int | None = None
     departure_station_name: str | None = None
     destination_station_name: str | None = None
     parcel_count: int = 0
@@ -75,9 +79,12 @@ class TripResponse(BaseModel):
             "destination_station_id": data.destination_station_id,
             "departure_time": data.departure_time,
             "status": data.status,
+            "booking_open": getattr(data, "booking_open", False),
+            "price_ticket_base": getattr(data, "price_ticket_base", None),
         }
         try:
             result["vehicle_plate"] = data.vehicle.plate_number
+            result["vehicle_capacity"] = data.vehicle.capacity
         except Exception as exc:
             logger.debug("vehicle not loaded on trip", trip_id=data.id, error=str(exc))
         try:
@@ -97,6 +104,10 @@ class TripResponse(BaseModel):
 
 class UpdateTripStatusRequest(BaseModel):
     status: TripStatus
+
+
+class ToggleBookingRequest(BaseModel):
+    booking_open: bool
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -133,6 +144,7 @@ async def create_trip(
         destination_station_id=body.destination_station_id,
         departure_time=body.departure_time,
         price_ticket_base=body.base_fare_ghs,
+        booking_open=body.booking_open,
     )
     db.add(trip)
     await db.commit()
@@ -224,6 +236,31 @@ async def update_trip_status(
     trip.status = body.status
     await db.commit()
 
+    result = await db.execute(
+        select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS)
+    )
+    return result.scalar_one()
+
+
+@router.patch(
+    "/{trip_id}/booking",
+    response_model=TripResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def toggle_booking(
+    trip_id: int,
+    body: ToggleBookingRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    trip = await _get_trip_or_404(trip_id, db)
+    if body.booking_open and trip.status == TripStatus.cancelled:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot open booking on a cancelled trip.",
+        )
+    trip.booking_open = body.booking_open
+    await db.commit()
     result = await db.execute(
         select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS)
     )

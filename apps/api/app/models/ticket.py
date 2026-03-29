@@ -1,9 +1,15 @@
 import enum
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+
+
+class TicketSource(enum.StrEnum):
+    counter = "counter"
+    online = "online"
 
 
 class TicketStatus(enum.StrEnum):
@@ -43,6 +49,12 @@ class Ticket(Base, TimestampMixin):
         Enum(PaymentStatus, name="paymentstatus"), default=PaymentStatus.pending, nullable=False
     )
     payment_ref: Mapped[str | None] = mapped_column(String(100))
+    source: Mapped[TicketSource] = mapped_column(
+        Enum(TicketSource, name="ticketsource"), default=TicketSource.counter, nullable=False
+    )
+    booking_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     trip: Mapped["Trip"] = relationship(back_populates="tickets")  # noqa: F821

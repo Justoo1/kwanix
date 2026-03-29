@@ -9,8 +9,6 @@ Create Date: 2026-03-28
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
 
 revision: str = "0001"
@@ -45,7 +43,7 @@ def upgrade() -> None:
         sa.Column("company_id", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("location_code", sa.String(10), nullable=True),
-        sa.Column("search_aliases", postgresql.ARRAY(sa.String(100)), nullable=True),
+        sa.Column("search_aliases", sa.JSON(), nullable=True),
         sa.Column("contact_number", sa.String(20), nullable=True),
         sa.Column("address", sa.String(255), nullable=True),
         sa.Column("is_hub", sa.Boolean(), nullable=False, server_default="false"),

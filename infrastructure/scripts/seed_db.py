@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "api"))
 
 from passlib.context import CryptContext
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -58,6 +58,12 @@ async def seed():
         await db.execute(text("SET LOCAL app.current_company_id = ''"))
 
         # ── Company ───────────────────────────────────────────────────────────
+        existing_company = (
+            await db.execute(select(Company).where(Company.company_code == "STC"))
+        ).scalar_one_or_none()
+        if existing_company:
+            print(f"⚠ Company already exists: {existing_company.name} — skipping seed.")
+            return
         company = Company(
             name="Intercity STC",
             subdomain="stc",

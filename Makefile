@@ -128,7 +128,7 @@ revision:
 	docker compose exec api alembic revision --autogenerate -m "$(MSG)"
 
 seed:
-	docker compose exec api python /app/../infrastructure/scripts/seed_db.py
+	docker compose exec -e PYTHONPATH=/app api python /infrastructure/scripts/seed_db.py
 
 # ── Shells ────────────────────────────────────────────────────────────────────
 

@@ -58,6 +58,16 @@ async def get_db_for_user(
     yield db
 
 
+async def get_db_public(
+    db: AsyncSession = Depends(get_db),
+) -> AsyncSession:
+    """
+    Returns an unscoped DB session for public (unauthenticated) endpoints.
+    RLS is not set — public endpoints must only query publicly-accessible data.
+    """
+    yield db
+
+
 def require_role(*roles: UserRole):
     """
     Dependency factory: raises 403 if the current user doesn't have one of the given roles.

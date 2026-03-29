@@ -61,6 +61,7 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
     if ticket and event_type == "charge.success":
         ticket.payment_status = PaymentStatus.paid
+        ticket.booking_expires_at = None  # seat confirmed, remove expiry
     elif ticket and event_type == "charge.failed":
         ticket.payment_status = PaymentStatus.failed
 

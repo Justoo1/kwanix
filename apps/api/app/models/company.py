@@ -13,6 +13,7 @@ class Company(Base, TimestampMixin):
     company_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
     api_key: Mapped[str | None] = mapped_column(String(100), unique=True)
     logo_url: Mapped[str | None] = mapped_column(Text)
+    brand_color: Mapped[str | None] = mapped_column(String(7))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships

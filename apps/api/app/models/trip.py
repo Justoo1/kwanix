@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -37,6 +37,7 @@ class Trip(Base, TimestampMixin):
     )
     price_parcel_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     price_ticket_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    booking_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="trips")  # noqa: F821

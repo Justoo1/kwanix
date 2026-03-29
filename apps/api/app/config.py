@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     debug: bool = True
+    public_app_url: str = "http://localhost:3000"
 
     # Arkesel low-balance alert threshold (units)
     sms_low_balance_threshold: int = 50

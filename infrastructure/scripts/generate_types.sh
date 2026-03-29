@@ -5,7 +5,7 @@
 # Usage: bash infrastructure/scripts/generate_types.sh
 set -e
 
-OUTPUT="apps/web/src/types/api.generated.ts"
+OUTPUT="apps/web/types/api.generated.ts"
 
 echo "Fetching OpenAPI schema from http://localhost:8000/openapi.json ..."
 npx openapi-typescript http://localhost:8000/openapi.json -o "$OUTPUT"
