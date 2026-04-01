@@ -45,3 +45,7 @@ logs/
 # Generated
 apps/web/src/types/api.generated.ts
 conversation.md
+docs/*.md
+CLAUDE.md
+apps/web/CLAUDE.md
+apps/web/AGENTS.md

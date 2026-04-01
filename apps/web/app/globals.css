@@ -1,26 +1,208 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════════
+   RoutePass Design Tokens
+   Theme: Split-surface — dark indigo sidebar + cool-slate light content
+   ═══════════════════════════════════════════════════════════ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.5rem;
+
+  /* ── Main surfaces ──────────────────────────────────────── */
+  /* Subtle cool-slate tint — premium vs plain white */
+  --background:        oklch(0.966 0.009 255);
+  --foreground:        oklch(0.13  0.030 255);
+
+  /* Cards sit on top of --background as pure white panels */
+  --card:              oklch(1     0     0);
+  --card-foreground:   oklch(0.13  0.030 255);
+  --popover:           oklch(1     0     0);
+  --popover-foreground:oklch(0.13  0.030 255);
+
+  /* ── Brand — Royal blue ─────────────────────────────────── */
+  --primary:           oklch(0.50  0.220 255);   /* rich royal blue   */
+  --primary-foreground:oklch(0.98  0.005 255);
+
+  /* ── Secondary / muted ──────────────────────────────────── */
+  --secondary:         oklch(0.93  0.012 255);
+  --secondary-foreground: oklch(0.25 0.020 255);
+  --muted:             oklch(0.93  0.012 255);
+  --muted-foreground:  oklch(0.52  0.015 255);
+
+  /* ── Accent — lighter indigo tint ───────────────────────── */
+  --accent:            oklch(0.92  0.030 265);
+  --accent-foreground: oklch(0.35  0.120 255);
+
+  /* ── High-contrast alert states (scanning logic) ─────────
+     These must be the most visually distinct tokens in the system.
+     --success  → scan accepted / boarding confirmed
+     --destructive → scan rejected / invalid ticket            */
+  --success:              oklch(0.68  0.210 145);   /* vibrant emerald   */
+  --success-foreground:   oklch(0.98  0.005 145);
+  --destructive:          oklch(0.58  0.265 27);    /* aggressive red    */
+  --destructive-foreground: oklch(0.98 0     0);
+
+  /* ── Borders & inputs ───────────────────────────────────── */
+  --border:  oklch(0.88  0.012 255);
+  --input:   oklch(0.88  0.012 255);
+  --ring:    oklch(0.50  0.220 255);
+
+  /* ── Sidebar — deep indigo-navy (always dark regardless of theme) ── */
+  --sidebar:                   oklch(0.150 0.040 260);
+  --sidebar-foreground:        oklch(0.90  0.010 260);
+  --sidebar-primary:           oklch(0.55  0.220 255);   /* active item blue  */
+  --sidebar-primary-foreground:oklch(0.98  0.005 255);
+  --sidebar-accent:            oklch(0.22  0.050 260);   /* hover bg          */
+  --sidebar-accent-foreground: oklch(0.95  0.010 260);
+  --sidebar-border:            oklch(0.22  0.040 260);
+  --sidebar-ring:              oklch(0.55  0.220 255);
+
+  /* ── Charts ─────────────────────────────────────────────── */
+  --chart-1: oklch(0.50  0.220 255);   /* blue    */
+  --chart-2: oklch(0.68  0.210 145);   /* green   */
+  --chart-3: oklch(0.58  0.265 27);    /* red     */
+  --chart-4: oklch(0.72  0.180 75);    /* amber   */
+  --chart-5: oklch(0.60  0.200 310);   /* violet  */
 }
 
+/* Dark mode — optional, for future toggle; sidebar stays the same */
+.dark {
+  --background:        oklch(0.12  0.020 255);
+  --foreground:        oklch(0.93  0.010 255);
+  --card:              oklch(0.16  0.025 255);
+  --card-foreground:   oklch(0.93  0.010 255);
+  --popover:           oklch(0.16  0.025 255);
+  --popover-foreground:oklch(0.93  0.010 255);
+  --primary:           oklch(0.62  0.220 255);
+  --primary-foreground:oklch(0.98  0.005 255);
+  --secondary:         oklch(0.20  0.030 255);
+  --secondary-foreground: oklch(0.90 0.010 255);
+  --muted:             oklch(0.20  0.030 255);
+  --muted-foreground:  oklch(0.58  0.015 255);
+  --accent:            oklch(0.24  0.050 265);
+  --accent-foreground: oklch(0.85  0.050 255);
+  --success:           oklch(0.70  0.215 145);
+  --success-foreground:oklch(0.10  0.015 145);
+  --destructive:       oklch(0.62  0.265 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border:            oklch(0.25  0.025 255);
+  --input:             oklch(0.25  0.025 255);
+  --ring:              oklch(0.62  0.220 255);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Register all tokens as Tailwind utilities
+   ═══════════════════════════════════════════════════════════ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-background:              var(--background);
+  --color-foreground:              var(--foreground);
+  --color-card:                    var(--card);
+  --color-card-foreground:         var(--card-foreground);
+  --color-popover:                 var(--popover);
+  --color-popover-foreground:      var(--popover-foreground);
+  --color-primary:                 var(--primary);
+  --color-primary-foreground:      var(--primary-foreground);
+  --color-secondary:               var(--secondary);
+  --color-secondary-foreground:    var(--secondary-foreground);
+  --color-muted:                   var(--muted);
+  --color-muted-foreground:        var(--muted-foreground);
+  --color-accent:                  var(--accent);
+  --color-accent-foreground:       var(--accent-foreground);
+  --color-success:                 var(--success);
+  --color-success-foreground:      var(--success-foreground);
+  --color-destructive:             var(--destructive);
+  --color-destructive-foreground:  var(--destructive-foreground);
+  --color-border:                  var(--border);
+  --color-input:                   var(--input);
+  --color-ring:                    var(--ring);
+  --color-chart-1:                 var(--chart-1);
+  --color-chart-2:                 var(--chart-2);
+  --color-chart-3:                 var(--chart-3);
+  --color-chart-4:                 var(--chart-4);
+  --color-chart-5:                 var(--chart-5);
+  --color-sidebar:                 var(--sidebar);
+  --color-sidebar-foreground:      var(--sidebar-foreground);
+  --color-sidebar-primary:         var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent:          var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border:          var(--sidebar-border);
+  --color-sidebar-ring:            var(--sidebar-ring);
+
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ═══════════════════════════════════════════════════════════
+   Base layer
+   ═══════════════════════════════════════════════════════════ */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ═══════════════════════════════════════════════════════════
+   Utility extensions
+   ═══════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Micro-animation — all interactive buttons */
+  .btn-press {
+    transition: transform 80ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  }
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Glow halos on hover — used for scanning CTA buttons */
+  .btn-glow-primary:hover {
+    box-shadow: 0 0 20px oklch(0.50 0.220 255 / 0.35);
+  }
+  .btn-glow-success:hover {
+    box-shadow: 0 0 20px oklch(0.68 0.210 145 / 0.45);
+  }
+  .btn-glow-destructive:hover {
+    box-shadow: 0 0 20px oklch(0.58 0.265 27 / 0.45);
+  }
+
+  /* Glassmorphism panels */
+  .glass {
+    backdrop-filter: blur(12px) saturate(160%);
+    background-color: oklch(1 0 0 / 0.55);
+    border: 1px solid oklch(1 0 0 / 0.30);
+  }
+
+  /* Slide-up entrance */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.28s ease both;
+  }
+
+  /* Pulsing dot for live scanning indicators */
+  @keyframes scan-pulse {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+  }
+  .animate-scan-pulse {
+    animation: scan-pulse 1.4s ease-in-out infinite;
+  }
 }
