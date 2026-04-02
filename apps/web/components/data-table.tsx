@@ -47,6 +47,8 @@ export function DataTable<TData, TValue>({
   pageSize = 10,
   className,
 }: DataTableProps<TData, TValue>) {
+  "use no memo";
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

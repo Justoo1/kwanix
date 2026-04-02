@@ -99,6 +99,7 @@ export default function ScanToLoadPage() {
 // ── Load Tab ──────────────────────────────────────────────────────────────────
 
 function LoadTab() {
+  "use no memo";
   const { data: trips = [], isLoading: tripsLoading } = useActiveTrips();
   const [selectedTripId, setSelectedTripId] = useState<number | "">("");
   const [scanResult, setScanResult] = useState<ScanResult>(null);
@@ -122,6 +123,7 @@ function LoadTab() {
   // are re-thrown normally. The original is restored on unmount.
   useEffect(() => {
     const original = HTMLVideoElement.prototype.play;
+    // eslint-disable-next-line react-hooks/unsupported-syntax
     HTMLVideoElement.prototype.play = function (this: HTMLVideoElement) {
       return original.apply(this).catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -194,7 +196,7 @@ function LoadTab() {
         }
       }
     },
-    [selectedTripId, loadMutation]
+    [selectedTripId, loadMutation, queryClient]
   );
 
   // Start/stop scanner

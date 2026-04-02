@@ -1,119 +1,202 @@
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Bus } from "lucide-react";
+import { notFound } from "next/navigation"
+import Link from "next/link"
+import {
+  ArrowLeft,
+  Bus,
+  Package,
+  Users,
+  Monitor,
+  ShoppingBag,
+  CalendarDays,
+} from "lucide-react"
 
-import { apiFetch } from "@/lib/api";
-import { getSession } from "@/lib/session";
-import type { TicketResponse } from "@/lib/definitions";
-import StatusForm from "./status-form";
-import BookingToggle from "./booking-toggle";
+import { apiFetch } from "@/lib/api"
+import { getSession } from "@/lib/session"
+import type { TicketResponse } from "@/lib/definitions"
+import StatusForm from "./status-form"
+import BookingToggle from "./booking-toggle"
+import ManifestDownloadButton from "./manifest-download-button"
 
 interface TripDetail {
-  id: number;
-  status: string;
-  vehicle_id: number;
-  vehicle_plate: string | null;
-  departure_station_name: string | null;
-  destination_station_name: string | null;
-  departure_time: string;
-  parcel_count: number;
-  booking_open: boolean;
-  price_ticket_base: number | null;
+  id: number
+  status: string
+  vehicle_id: number
+  vehicle_plate: string | null
+  vehicle_capacity: number | null
+  departure_station_name: string | null
+  destination_station_name: string | null
+  departure_time: string
+  parcel_count: number
+  booking_open: boolean
+  price_ticket_base: number | null
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  scheduled: "bg-zinc-100 text-zinc-700",
-  loading: "bg-amber-100 text-amber-800",
-  departed: "bg-blue-100 text-blue-800",
-  arrived: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-red-100 text-red-700",
-};
+// ── Status config ──────────────────────────────────────────────────────────────
 
-const MANAGER_ROLES = ["station_manager", "company_admin", "super_admin"];
+const STATUS_META: Record<string, { pill: string; border: string }> = {
+  scheduled: {
+    pill: "bg-zinc-100 text-zinc-700 border border-zinc-200",
+    border: "border-zinc-200",
+  },
+  loading: {
+    pill: "bg-amber-100 text-amber-800 border border-amber-200",
+    border: "border-amber-200",
+  },
+  departed: {
+    pill: "bg-blue-100 text-blue-800 border border-blue-200",
+    border: "border-blue-200",
+  },
+  arrived: {
+    pill: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+    border: "border-emerald-200",
+  },
+  cancelled: {
+    pill: "bg-red-50 text-red-700 border border-red-200",
+    border: "border-red-200",
+  },
+}
+
+const MANAGER_ROLES = ["station_manager", "company_admin", "super_admin"]
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function TripDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }) {
-  const { id } = await params;
-  const session = await getSession();
+  const { id } = await params
+  const session = await getSession()
 
   const [trip, tickets] = await Promise.all([
     apiFetch<TripDetail>(`/api/v1/trips/${id}`).catch(() => null),
     apiFetch<TicketResponse[]>(`/api/v1/tickets?trip_id=${id}`).catch(
       () => [] as TicketResponse[]
     ),
-  ]);
+  ])
 
-  if (!trip) notFound();
+  if (!trip) notFound()
 
-  const canManage = MANAGER_ROLES.includes(session?.user.role ?? "");
+  const canManage = MANAGER_ROLES.includes(session?.user.role ?? "")
+  const meta = STATUS_META[trip.status]
+
+  const onlineCount = tickets.filter((t) => t.source === "online").length
+  const counterCount = tickets.filter(
+    (t) => !t.source || t.source === "counter"
+  ).length
+  const totalRevenue = tickets.reduce((sum, t) => sum + Number(t.fare_ghs), 0)
+  const occupancyPct =
+    trip.vehicle_capacity && trip.vehicle_capacity > 0
+      ? Math.round((tickets.length / trip.vehicle_capacity) * 100)
+      : null
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/trips"
-          className="text-zinc-400 hover:text-zinc-700 transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-2xl font-bold text-zinc-900">Trip #{trip.id}</h1>
-        <span
-          className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_STYLES[trip.status] ?? "bg-zinc-100 text-zinc-600"}`}
-        >
-          {trip.status}
-        </span>
+    <div className="space-y-6 max-w-5xl">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/trips"
+            className="text-zinc-400 hover:text-zinc-700 transition-colors"
+          >
+            <ArrowLeft className="size-5" />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-zinc-900">Trip #{trip.id}</h1>
+              <span
+                className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${
+                  meta?.pill ?? "bg-zinc-100 text-zinc-600 border border-zinc-200"
+                }`}
+              >
+                {trip.status}
+              </span>
+            </div>
+            <p className="text-sm text-zinc-500 mt-0.5">
+              {trip.departure_station_name} → {trip.destination_station_name}
+            </p>
+          </div>
+        </div>
+
+        {/* Manifest download — prominent primary action */}
+        <ManifestDownloadButton tripId={trip.id} />
       </div>
 
-      {/* Trip info card */}
-      <div className="bg-white rounded-xl border border-zinc-200 p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-zinc-100 rounded-lg p-3">
-            <Bus className="h-5 w-5 text-zinc-600" />
+      {/* ── Route + vehicle info card ───────────────────────────────────── */}
+      <div
+        className={`bg-white rounded-xl border p-6 space-y-5 ${
+          meta?.border ?? "border-zinc-200"
+        }`}
+      >
+        <div className="flex items-center gap-4">
+          <div className="bg-zinc-100 rounded-xl p-3">
+            <Bus className="size-6 text-zinc-600" />
           </div>
           <div>
-            <p className="font-semibold text-zinc-900 text-lg">
+            <p className="font-semibold text-zinc-900 text-lg leading-tight">
               {trip.departure_station_name}{" "}
-              <span className="text-zinc-400">→</span>{" "}
+              <span className="text-zinc-400 font-normal">→</span>{" "}
               {trip.destination_station_name}
             </p>
-            <p className="text-sm text-zinc-500">
-              {trip.vehicle_plate} &middot;{" "}
+            <p className="text-sm text-zinc-500 mt-0.5 flex items-center gap-1.5">
+              <CalendarDays className="size-3.5 shrink-0" />
               {new Date(trip.departure_time).toLocaleString("en-GH", {
                 dateStyle: "full",
                 timeStyle: "short",
               })}
             </p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {trip.vehicle_plate}
+              {trip.vehicle_capacity
+                ? ` · ${trip.vehicle_capacity}-seat vehicle`
+                : ""}
+            </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-zinc-100">
-          <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">Tickets</p>
-            <p className="text-xl font-bold text-zinc-900 mt-1">{tickets.length}</p>
-          </div>
-          <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">Online</p>
-            <p className="text-xl font-bold text-zinc-900 mt-1">
-              {tickets.filter((t) => t.source === "online").length}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">Counter</p>
-            <p className="text-xl font-bold text-zinc-900 mt-1">
-              {tickets.filter((t) => !t.source || t.source === "counter").length}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">Parcels</p>
-            <p className="text-xl font-bold text-zinc-900 mt-1">{trip.parcel_count}</p>
-          </div>
+        {/* ── Summary stats grid ──────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-zinc-100">
+          <StatCard
+            icon={<Users className="size-4 text-blue-500" />}
+            label="Passengers"
+            value={tickets.length}
+            sub={
+              trip.vehicle_capacity
+                ? `${occupancyPct}% capacity`
+                : undefined
+            }
+          />
+          <StatCard
+            icon={<Monitor className="size-4 text-violet-500" />}
+            label="Online booked"
+            value={onlineCount}
+          />
+          <StatCard
+            icon={<ShoppingBag className="size-4 text-zinc-500" />}
+            label="Counter issued"
+            value={counterCount}
+          />
+          <StatCard
+            icon={<Package className="size-4 text-amber-500" />}
+            label="Parcels"
+            value={trip.parcel_count}
+          />
         </div>
+
+        {/* Revenue highlight (only if tickets exist) */}
+        {tickets.length > 0 && (
+          <div className="bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-emerald-700 font-medium">
+              Total ticket revenue
+            </span>
+            <span className="text-lg font-bold text-emerald-800">
+              GHS {totalRevenue.toFixed(2)}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Online booking toggle — managers only */}
+      {/* ── Online booking toggle — managers only ───────────────────────── */}
       {canManage && (
         <BookingToggle
           tripId={trip.id}
@@ -122,7 +205,7 @@ export default async function TripDetailPage({
         />
       )}
 
-      {/* Status update */}
+      {/* ── Status update — managers only ─────────────────────────────── */}
       {canManage && (
         <div className="bg-white rounded-xl border border-zinc-200 p-6">
           <h2 className="text-base font-medium text-zinc-800 mb-4">
@@ -132,9 +215,9 @@ export default async function TripDetailPage({
         </div>
       )}
 
-      {/* Ticket list */}
+      {/* ── Ticket list ────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-zinc-100">
           <h2 className="text-base font-medium text-zinc-800">
             Tickets
             <span className="ml-2 text-sm font-normal text-zinc-400">
@@ -142,60 +225,99 @@ export default async function TripDetailPage({
             </span>
           </h2>
         </div>
+
         {tickets.length === 0 ? (
-          <p className="px-6 py-8 text-sm text-zinc-400 text-center">
-            No tickets issued yet.
-          </p>
+          <div className="px-6 py-12 text-center">
+            <Users className="size-8 text-zinc-300 mx-auto mb-2" />
+            <p className="text-sm text-zinc-400">No tickets issued yet.</p>
+          </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">Seat</th>
-                <th className="px-6 py-3 text-left font-medium">Passenger</th>
-                <th className="px-6 py-3 text-left font-medium">Phone</th>
-                <th className="px-6 py-3 text-left font-medium">Fare</th>
-                <th className="px-6 py-3 text-left font-medium">Source</th>
-                <th className="px-6 py-3 text-left font-medium">Status</th>
-                <th className="px-6 py-3 text-left font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {tickets.map((t) => (
-                <tr key={t.id} className="hover:bg-zinc-50">
-                  <td className="px-6 py-4 font-mono text-zinc-700">{t.seat_number}</td>
-                  <td className="px-6 py-4 font-medium text-zinc-900">{t.passenger_name}</td>
-                  <td className="px-6 py-4 text-zinc-500">{t.passenger_phone}</td>
-                  <td className="px-6 py-4 text-zinc-700">GHS {Number(t.fare_ghs).toFixed(2)}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        t.source === "online"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-zinc-100 text-zinc-600"
-                      }`}
-                    >
-                      {t.source ?? "counter"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">
-                      {t.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Link
-                      href={`/tickets/${t.id}`}
-                      className="text-xs text-blue-600 hover:underline"
-                    >
-                      View
-                    </Link>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="px-6 py-3 text-left font-medium">Seat</th>
+                  <th className="px-6 py-3 text-left font-medium">Passenger</th>
+                  <th className="px-6 py-3 text-left font-medium">Phone</th>
+                  <th className="px-6 py-3 text-left font-medium">Fare</th>
+                  <th className="px-6 py-3 text-left font-medium">Source</th>
+                  <th className="px-6 py-3 text-left font-medium">Status</th>
+                  <th className="px-6 py-3 text-left font-medium" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {tickets.map((t) => (
+                  <tr key={t.id} className="hover:bg-zinc-50 transition-colors">
+                    <td className="px-6 py-4 font-mono text-zinc-700">
+                      {t.seat_number}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-zinc-900">
+                      {t.passenger_name}
+                    </td>
+                    <td className="px-6 py-4 text-zinc-500">
+                      {t.passenger_phone}
+                    </td>
+                    <td className="px-6 py-4 text-zinc-700">
+                      GHS {Number(t.fare_ghs).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          t.source === "online"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-zinc-100 text-zinc-600"
+                        }`}
+                      >
+                        {t.source ?? "counter"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Link
+                        href={`/tickets/${t.id}`}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
-  );
+  )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number
+  sub?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        {icon}
+        <p className="text-xs text-zinc-500 uppercase tracking-wide font-medium">
+          {label}
+        </p>
+      </div>
+      <p className="text-2xl font-bold text-zinc-900 tabular-nums">{value}</p>
+      {sub && <p className="text-xs text-zinc-400">{sub}</p>}
+    </div>
+  )
 }

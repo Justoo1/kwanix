@@ -1,4 +1,5 @@
 
+import contextlib
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
@@ -270,14 +271,10 @@ def _parcel_to_response(parcel: Parcel, include_stations: bool = False) -> Parce
     origin_name: str | None = None
     dest_name: str | None = None
     if include_stations:
-        try:
+        with contextlib.suppress(Exception):
             origin_name = parcel.origin_station.name
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             dest_name = parcel.destination_station.name
-        except Exception:
-            pass
     return ParcelResponse(
         id=parcel.id,
         tracking_number=parcel.tracking_number,

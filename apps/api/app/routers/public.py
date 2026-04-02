@@ -131,8 +131,10 @@ async def list_public_trips(
         try:
             from datetime import date as date_type
             day = date_type.fromisoformat(date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
+        except ValueError as err:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format, use YYYY-MM-DD"
+            ) from err
         q = q.where(func.date(Trip.departure_time) == day)
 
     result = await db.execute(q)
@@ -318,7 +320,9 @@ async def get_public_ticket(
         departure_station=ticket.trip.departure_station.name if ticket.trip else None,
         destination_station=ticket.trip.destination_station.name if ticket.trip else None,
         departure_time=ticket.trip.departure_time.isoformat() if ticket.trip else None,
-        vehicle_plate=ticket.trip.vehicle.plate_number if ticket.trip and ticket.trip.vehicle else None,
+        vehicle_plate=(
+            ticket.trip.vehicle.plate_number if ticket.trip and ticket.trip.vehicle else None
+        ),
         company_name=company.name if company else None,
         brand_color=company.brand_color if company else None,
     )

@@ -149,9 +149,9 @@ export default async function TicketDetailPage({
 
               {/* Right side boxes */}
               <div className="flex flex-col gap-3 justify-center">
-                <BoxField label="Bus No." value={ticket.vehicle_plate ?? "—"} accent={accent} bg={midBg} />
-                <BoxField label="Seat No." value={String(ticket.seat_number)} accent={accent} bg={midBg} large />
-                <BoxField label="Fare" value={`GHS ${Number(ticket.fare_ghs).toFixed(2)}`} accent={accent} bg={midBg} />
+                <BoxField label="Bus No." value={ticket.vehicle_plate ?? "—"} accent={accent} />
+                <BoxField label="Seat No." value={String(ticket.seat_number)} accent={accent} large />
+                <BoxField label="Fare" value={`GHS ${Number(ticket.fare_ghs).toFixed(2)}`} accent={accent} />
               </div>
             </div>
 
@@ -315,13 +315,11 @@ function BoxField({
   label,
   value,
   accent,
-  bg,
   large,
 }: {
   label: string;
   value: string;
   accent: string;
-  bg: string;
   large?: boolean;
 }) {
   return (

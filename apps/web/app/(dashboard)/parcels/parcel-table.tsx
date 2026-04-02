@@ -179,6 +179,7 @@ export default function ParcelTable({
   isLoading?: boolean;
   isError?: boolean;
 }) {
+  "use no memo";
   const [printTarget, setPrintTarget] = useState<ParcelRow | null>(null);
   const [printedIds, setPrintedIds] = useState<Set<number>>(new Set());
 
@@ -193,6 +194,7 @@ export default function ParcelTable({
 
   const columns = buildColumns(setPrintTarget, printedIds);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: parcels,
     columns,

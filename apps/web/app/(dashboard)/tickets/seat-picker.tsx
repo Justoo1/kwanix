@@ -235,9 +235,11 @@ export default function SeatPicker({ trips, brandColor }: Props) {
 
   useEffect(() => {
     if (selectedTripId === null) {
-      setSeatData(null);
-      setFlippedSeat(null);
-      setIssuedSeats(new Map());
+      startLoading(() => {
+        setSeatData(null);
+        setFlippedSeat(null);
+        setIssuedSeats(new Map());
+      });
       return;
     }
     startLoading(async () => {

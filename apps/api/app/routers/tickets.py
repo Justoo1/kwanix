@@ -284,7 +284,9 @@ async def share_ticket(
         loaded_trip = dep.scalar_one_or_none()
         if loaded_trip:
             dep_name = loaded_trip.departure_station.name if loaded_trip.departure_station else ""
-            dst_name = loaded_trip.destination_station.name if loaded_trip.destination_station else ""
+            dst_name = (
+                loaded_trip.destination_station.name if loaded_trip.destination_station else ""
+            )
             route = f"{dep_name} → {dst_name}"
 
     message = (
