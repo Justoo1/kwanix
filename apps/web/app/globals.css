@@ -206,3 +206,34 @@
     animation: scan-pulse 1.4s ease-in-out infinite;
   }
 }
+
+/* ── Thermal label print isolation ────────────────────────────────────────────
+   At print time every element is hidden via visibility (not display:none, which
+   would collapse the layout entirely). Only #parcel-print-root and its children
+   are revealed, pinned to the top-left corner of the physical page.
+   ─────────────────────────────────────────────────────────────────────────── */
+/* Screen: keep the print root hidden so it never appears in the UI */
+#parcel-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    /* 58mm roll — zero margin so content fills the full roll width.
+       "auto" height means the page shrinks to exactly the receipt height. */
+    size: 58mm auto;
+    margin: 0;
+  }
+
+  /* Collapse every direct body child with display:none (removes layout space) */
+  body > * {
+    display: none !important;
+  }
+
+  /* Reveal only the print root — it is a direct body child via React portal */
+  #parcel-print-root {
+    display: block !important;
+    width: 58mm !important;
+    box-sizing: border-box !important;
+  }
+}

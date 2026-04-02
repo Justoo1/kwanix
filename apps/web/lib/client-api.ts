@@ -26,7 +26,15 @@ export async function clientFetch<T>(
     let message: string;
     try {
       const json = JSON.parse(text);
-      message = json?.detail ?? text;
+      const detail = json?.detail;
+      // FastAPI structured errors (e.g. DESTINATION_MISMATCH) send detail as
+      // an object, not a string. Preserve it as JSON so callers can parse it.
+      message =
+        detail === undefined
+          ? text
+          : typeof detail === "string"
+          ? detail
+          : JSON.stringify(detail);
     } catch {
       message = text;
     }

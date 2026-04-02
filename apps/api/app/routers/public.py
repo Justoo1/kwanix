@@ -3,11 +3,10 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_db_public
@@ -15,7 +14,6 @@ from app.integrations.paystack import initialize_transaction
 from app.models.company import Company
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
 from app.models.trip import Trip, TripStatus
-from app.models.vehicle import Vehicle
 from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()

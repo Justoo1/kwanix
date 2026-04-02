@@ -1,8 +1,11 @@
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from datetime import datetime
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user
 from app.integrations.arkesel import (
@@ -15,6 +18,7 @@ from app.models.parcel import Parcel, ParcelStatus
 from app.models.user import User
 from app.services.parcel_service import (
     collect_parcel,
+    get_parcel_by_tracking_or_404,
     get_parcel_or_404,
     unload_parcel,
     validate_and_load,
@@ -59,14 +63,19 @@ class ParcelResponse(BaseModel):
     receiver_phone: str
     origin_station_id: int
     destination_station_id: int
+    origin_station_name: str | None = None
+    destination_station_name: str | None = None
+    weight_kg: float | None = None
     fee_ghs: float
+    description: str | None = None
+    created_at: datetime | None = None
     qr_code_base64: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class LoadParcelRequest(BaseModel):
-    parcel_id: int
+    tracking_number: str
     trip_id: int
 
 
@@ -137,9 +146,30 @@ async def create_parcel(
         "parcel_logged",
     )
 
-    response = _parcel_to_response(parcel)
+    response = _parcel_to_response(parcel, include_stations=True)
     response.qr_code_base64 = generate_qr_base64(parcel.tracking_number)
     return response
+
+
+@router.get("", response_model=list[ParcelResponse])
+async def list_parcels(
+    parcel_status: str | None = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    q = (
+        select(Parcel)
+        .options(
+            selectinload(Parcel.origin_station),
+            selectinload(Parcel.destination_station),
+        )
+        .order_by(Parcel.id.desc())
+        .limit(200)
+    )
+    if parcel_status and parcel_status in ParcelStatus.__members__:
+        q = q.where(Parcel.status == ParcelStatus[parcel_status])
+    result = await db.execute(q)
+    return [_parcel_to_response(p, include_stations=True) for p in result.scalars().all()]
 
 
 @router.patch("/load")
@@ -149,7 +179,8 @@ async def load_parcel(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    parcel = await validate_and_load(db, body.parcel_id, body.trip_id, current_user.id)
+    parcel_lookup = await get_parcel_by_tracking_or_404(db, body.tracking_number)
+    parcel = await validate_and_load(db, parcel_lookup.id, body.trip_id, current_user.id)
     await db.commit()
     await db.refresh(parcel, ["destination_station", "current_trip"])
 
@@ -235,7 +266,18 @@ async def get_parcel(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _parcel_to_response(parcel: Parcel) -> ParcelResponse:
+def _parcel_to_response(parcel: Parcel, include_stations: bool = False) -> ParcelResponse:
+    origin_name: str | None = None
+    dest_name: str | None = None
+    if include_stations:
+        try:
+            origin_name = parcel.origin_station.name
+        except Exception:
+            pass
+        try:
+            dest_name = parcel.destination_station.name
+        except Exception:
+            pass
     return ParcelResponse(
         id=parcel.id,
         tracking_number=parcel.tracking_number,
@@ -245,5 +287,10 @@ def _parcel_to_response(parcel: Parcel) -> ParcelResponse:
         receiver_phone=parcel.receiver_phone,
         origin_station_id=parcel.origin_station_id,
         destination_station_id=parcel.destination_station_id,
+        origin_station_name=origin_name,
+        destination_station_name=dest_name,
+        weight_kg=float(parcel.weight_kg) if parcel.weight_kg is not None else None,
         fee_ghs=float(parcel.fee_ghs),
+        description=parcel.description,
+        created_at=parcel.created_at,
     )
