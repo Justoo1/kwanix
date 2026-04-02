@@ -8,10 +8,61 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Printer, CheckCheck, AlertCircle } from "lucide-react";
+import { Printer, CheckCheck, AlertCircle, ExternalLink, Copy, Check } from "lucide-react";
 import { type ParcelRow } from "@/hooks/use-parcels";
 import ParcelPrint from "./parcel-print";
 import { markPrinted, getPrintedIds } from "@/lib/print-tracker";
+
+function TrackingCell({ trackingNumber }: { trackingNumber: string }) {
+  const [copied, setCopied] = useState(false);
+  const url =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/track/${trackingNumber}`
+      : `/track/${trackingNumber}`;
+
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <a
+        href={`/track/${trackingNumber}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-mono text-xs font-semibold text-zinc-800 hover:text-blue-600 hover:underline transition-colors"
+        title="Open public tracking page"
+      >
+        {trackingNumber}
+      </a>
+      <span className="flex items-center gap-0.5">
+        <a
+          href={`/track/${trackingNumber}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-zinc-300 hover:text-blue-500 transition-colors"
+          title="Open tracking page"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+        <button
+          onClick={handleCopy}
+          className="text-zinc-300 hover:text-zinc-600 transition-colors"
+          title={copied ? "Copied!" : "Copy tracking link"}
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-emerald-500" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+        </button>
+      </span>
+    </div>
+  );
+}
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800",
@@ -36,11 +87,7 @@ function buildColumns(
   return [
     col.accessor("tracking_number", {
       header: "Tracking #",
-      cell: (i) => (
-        <span className="font-mono text-xs font-semibold text-zinc-800">
-          {i.getValue()}
-        </span>
-      ),
+      cell: (i) => <TrackingCell trackingNumber={i.getValue()} />,
     }),
     col.display({
       id: "sender_receiver",

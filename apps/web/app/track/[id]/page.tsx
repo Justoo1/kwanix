@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
-import { Package, MapPin, Truck, CheckCircle, Clock } from "lucide-react";
+import {
+  Package,
+  Truck,
+  MapPinCheck,
+  UserCheck,
+  AlertCircle,
+  ArrowRight,
+} from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -18,18 +25,58 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  return { title: `Track ${id} — RoutePass` };
+  return {
+    title: `Track ${id} — RoutePass`,
+    description: "Real-time parcel tracking for your RoutePass shipment.",
+  };
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; icon: React.ComponentType<{ className?: string }>; color: string }
-> = {
-  pending: { label: "Logged — awaiting pickup", icon: Clock, color: "text-zinc-500" },
-  in_transit: { label: "In Transit", icon: Truck, color: "text-blue-600" },
-  arrived: { label: "Arrived — ready for collection", icon: MapPin, color: "text-amber-600" },
-  picked_up: { label: "Collected", icon: CheckCircle, color: "text-emerald-600" },
-};
+// ── Timeline step configuration ────────────────────────────────────────────────
+
+const TIMELINE_STEPS = [
+  {
+    key: "pending",
+    label: "Package Logged",
+    sub: "Registered at origin station",
+    Icon: Package,
+  },
+  {
+    key: "in_transit",
+    label: "In Transit",
+    sub: "On the way to destination",
+    Icon: Truck,
+  },
+  {
+    key: "arrived",
+    label: "Arrived",
+    sub: "Ready for collection at destination",
+    Icon: MapPinCheck,
+  },
+  {
+    key: "picked_up",
+    label: "Collected",
+    sub: "Delivered to recipient",
+    Icon: UserCheck,
+  },
+] as const;
+
+type StepKey = (typeof TIMELINE_STEPS)[number]["key"];
+
+const STEP_ORDER: StepKey[] = ["pending", "in_transit", "arrived", "picked_up"];
+
+function stepStatus(
+  stepKey: StepKey,
+  currentStatus: string
+): "done" | "active" | "pending" {
+  const ci = STEP_ORDER.indexOf(currentStatus as StepKey);
+  const si = STEP_ORDER.indexOf(stepKey);
+  if (ci < 0) return "pending";
+  if (si < ci) return "done";
+  if (si === ci) return "active";
+  return "pending";
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default async function TrackPage({
   params,
@@ -42,9 +89,10 @@ export default async function TrackPage({
   let error: string | null = null;
 
   try {
-    const res = await fetch(`${API_BASE}/api/v1/track/${encodeURIComponent(id)}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `${API_BASE}/api/v1/track/${encodeURIComponent(id)}`,
+      { cache: "no-store" }
+    );
     if (res.status === 404) {
       error = "Tracking ID not found.";
     } else if (!res.ok) {
@@ -57,107 +105,154 @@ export default async function TrackPage({
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-800 flex flex-col items-center justify-center px-4 py-12">
+      {/* Brand bar */}
+      <div className="mb-8 flex flex-col items-center gap-1 select-none">
+        <span className="text-xs font-bold tracking-[0.25em] uppercase text-zinc-500">
+          RoutePass
+        </span>
+        <h1 className="text-2xl font-extrabold text-white tracking-tight">
+          Parcel Tracker
+        </h1>
+      </div>
+
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-zinc-900">RoutePass Tracking</h1>
-          <p className="text-sm text-zinc-500 mt-1">Real-time parcel status</p>
-        </div>
-
         {error ? (
-          <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-6 text-center">
-            <Package className="h-10 w-10 text-zinc-300 mx-auto mb-3" />
-            <p className="text-sm font-medium text-zinc-700">{error}</p>
-            <p className="text-xs text-zinc-400 mt-1">ID: {id}</p>
-          </div>
+          <ErrorCard id={id} message={error} />
         ) : parcel ? (
-          <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-            {/* Header */}
-            <div className="bg-zinc-900 px-5 py-4">
-              <p className="text-xs text-zinc-400 uppercase tracking-wide">
-                Tracking Number
-              </p>
-              <p className="font-mono text-white font-bold text-lg mt-0.5">
-                {parcel.tracking_number}
-              </p>
-            </div>
-
-            {/* Status */}
-            <div className="px-5 py-5 border-b border-zinc-100">
-              <StatusBadge status={parcel.status} />
-              {parcel.bus_plate && (
-                <p className="text-sm text-zinc-500 mt-2">
-                  Bus: <span className="font-medium">{parcel.bus_plate}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Route */}
-            <div className="px-5 py-4 space-y-3">
-              <RouteRow label="From" value={parcel.origin} />
-              <RouteRow label="To" value={parcel.destination} />
-              <RouteRow
-                label="Last updated"
-                value={new Date(parcel.last_updated).toLocaleString("en-GH", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
-              />
-            </div>
-
-            {/* Progress */}
-            <div className="px-5 pb-5">
-              <ProgressBar status={parcel.status} />
-            </div>
-          </div>
+          <TrackCard parcel={parcel} />
         ) : null}
+      </div>
 
-        <p className="text-center text-xs text-zinc-400 mt-6">
-          For assistance, contact your station manager.
+      <p className="mt-8 text-xs text-zinc-600 text-center">
+        For assistance, contact your nearest RoutePass station.
+      </p>
+    </div>
+  );
+}
+
+// ── Error state ────────────────────────────────────────────────────────────────
+
+function ErrorCard({ id, message }: { id: string; message: string }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm p-8 text-center shadow-2xl">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 ring-1 ring-red-500/20">
+        <AlertCircle className="h-6 w-6 text-red-400" />
+      </div>
+      <p className="font-semibold text-white">{message}</p>
+      <p className="mt-1 font-mono text-xs text-zinc-500">{id}</p>
+    </div>
+  );
+}
+
+// ── Main tracking card ─────────────────────────────────────────────────────────
+
+function TrackCard({ parcel }: { parcel: PublicParcelStatus }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shadow-2xl overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-5 border-b border-zinc-800">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 mb-1">
+          Tracking Number
+        </p>
+        <p className="font-mono text-lg font-bold text-white leading-tight">
+          {parcel.tracking_number}
+        </p>
+        {parcel.bus_plate && (
+          <p className="mt-1.5 text-xs text-zinc-400">
+            Vehicle:{" "}
+            <span className="font-medium text-zinc-300">{parcel.bus_plate}</span>
+          </p>
+        )}
+      </div>
+
+      {/* Route row */}
+      <div className="px-6 py-4 border-b border-zinc-800 flex items-center gap-2 text-sm">
+        <span className="font-medium text-zinc-200 truncate">{parcel.origin}</span>
+        <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+        <span className="font-medium text-zinc-200 truncate">{parcel.destination}</span>
+      </div>
+
+      {/* Timeline */}
+      <div className="px-6 py-6">
+        <div className="relative">
+          {/* Vertical spine */}
+          <div className="absolute left-[19px] top-[20px] bottom-[20px] w-px bg-zinc-800" />
+
+          <div className="space-y-0">
+            {TIMELINE_STEPS.map((step, idx) => {
+              const state = stepStatus(step.key, parcel.status);
+              const isLast = idx === TIMELINE_STEPS.length - 1;
+              const { Icon } = step;
+
+              return (
+                <div
+                  key={step.key}
+                  className={`relative flex gap-4 ${!isLast ? "pb-6" : ""}`}
+                >
+                  {/* Circle indicator */}
+                  <div className="relative z-10 flex-shrink-0">
+                    {state === "done" && (
+                      <div className="h-10 w-10 rounded-full bg-emerald-500/15 ring-2 ring-emerald-500/40 flex items-center justify-center">
+                        <Icon className="h-4 w-4 text-emerald-400" />
+                      </div>
+                    )}
+                    {state === "active" && (
+                      <div className="relative h-10 w-10">
+                        {/* Outer pulse ring */}
+                        <span className="absolute inset-0 rounded-full bg-sky-400/20 animate-ping" />
+                        <div className="relative h-10 w-10 rounded-full bg-sky-500/20 ring-2 ring-sky-400 flex items-center justify-center">
+                          <Icon className="h-4 w-4 text-sky-300" />
+                        </div>
+                      </div>
+                    )}
+                    {state === "pending" && (
+                      <div className="h-10 w-10 rounded-full bg-zinc-800 ring-1 ring-zinc-700 flex items-center justify-center">
+                        <Icon className="h-4 w-4 text-zinc-600" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Text */}
+                  <div className="pt-1.5 min-w-0">
+                    <p
+                      className={`text-sm font-semibold leading-tight ${
+                        state === "done"
+                          ? "text-emerald-400"
+                          : state === "active"
+                            ? "text-sky-300"
+                            : "text-zinc-600"
+                      }`}
+                    >
+                      {step.label}
+                    </p>
+                    <p
+                      className={`text-xs mt-0.5 leading-snug ${
+                        state === "pending" ? "text-zinc-700" : "text-zinc-500"
+                      }`}
+                    >
+                      {step.sub}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer: last updated */}
+      <div className="px-6 pb-5">
+        <p className="text-[11px] text-zinc-600 text-right">
+          Last updated:{" "}
+          <span className="text-zinc-500">
+            {new Date(parcel.last_updated).toLocaleString("en-GH", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}
+          </span>
         </p>
       </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status] ?? {
-    label: status,
-    icon: Package,
-    color: "text-zinc-600",
-  };
-  const Icon = config.icon;
-  return (
-    <div className={`flex items-center gap-2 ${config.color}`}>
-      <Icon className="h-5 w-5" />
-      <span className="font-semibold text-sm">{config.label}</span>
-    </div>
-  );
-}
-
-function RouteRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-zinc-400">{label}</span>
-      <span className="font-medium text-zinc-800">{value}</span>
-    </div>
-  );
-}
-
-const STEPS = ["pending", "in_transit", "arrived", "picked_up"];
-
-function ProgressBar({ status }: { status: string }) {
-  const currentIndex = STEPS.indexOf(status);
-  return (
-    <div className="flex items-center gap-1.5 mt-1">
-      {STEPS.map((step, i) => (
-        <div
-          key={step}
-          className={`h-1.5 flex-1 rounded-full transition-colors ${
-            i <= currentIndex ? "bg-emerald-500" : "bg-zinc-200"
-          }`}
-        />
-      ))}
     </div>
   );
 }

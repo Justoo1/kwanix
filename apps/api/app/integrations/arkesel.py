@@ -119,16 +119,18 @@ async def dispatch_sms(
 
 
 def msg_parcel_logged(sender_name: str, destination: str, tracking_id: str) -> str:
+    url = f"{settings.public_app_url}/track/{tracking_id}"
     return (
         f"Hi! A parcel from {sender_name} has been logged for {destination}. "
-        f"Track it with ID: {tracking_id}. - RoutePass"
+        f"Track it here: {url} - RoutePass"
     )
 
 
 def msg_parcel_in_transit(plate_number: str, destination: str, tracking_id: str) -> str:
+    url = f"{settings.public_app_url}/track/{tracking_id}"
     return (
         f"Good news! Your parcel ({tracking_id}) is on Bus {plate_number} heading to "
-        f"{destination}. - RoutePass"
+        f"{destination}. Track it here: {url} - RoutePass"
     )
 
 

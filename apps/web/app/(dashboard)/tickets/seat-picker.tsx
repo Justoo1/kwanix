@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   createTicket,
@@ -69,6 +70,9 @@ function SeatCard({
       const result = await createTicket(undefined, fd);
       if (result?.ticket_id) {
         const name = fd.get("passenger_name") as string | null;
+        toast.success(`Seat ${seatNumber} — Ticket issued`, {
+          description: name ? `Passenger: ${name}` : undefined,
+        });
         onIssued(seatNumber, name || null);
         onFlip(null);
       } else if (result?.message) {
