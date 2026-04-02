@@ -14,7 +14,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     () =>
       new QueryClient({
         queryCache: new QueryCache({
-          onError: (error) => {
+          onError: (error, query) => {
+            if (query.meta?.silent) return;
             toast.error(error.message || "A network error occurred.");
           },
         }),

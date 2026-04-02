@@ -108,6 +108,7 @@ function LoadTab() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
+  const lastScanTimestampRef = useRef<number>(0);
 
   const loadMutation = useLoadParcel();
   const queryClient = useQueryClient();
@@ -137,6 +138,9 @@ function LoadTab() {
 
   const onScanSuccess = useCallback(
     async (decodedText: string) => {
+      const now = Date.now();
+      if (now - lastScanTimestampRef.current < 1_000) return;
+      lastScanTimestampRef.current = now;
       if (isProcessingRef.current || !selectedTripId) return;
       isProcessingRef.current = true;
 
@@ -257,6 +261,7 @@ function LoadTab() {
   function resetScan() {
     setScanResult(null);
     isProcessingRef.current = false;
+    lastScanTimestampRef.current = 0;
     // Resume camera preview — scanner is still alive in PAUSED state.
     // Guard with try/catch in case the user navigated away mid-scan.
     if (scannerRef.current) {

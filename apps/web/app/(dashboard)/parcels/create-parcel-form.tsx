@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Image from "next/image";
 
 import { createParcel, type CreateParcelState } from "./actions";
+import { validateGhanaPhone } from "@/lib/schemas";
 
 interface StationOption {
   id: number;
@@ -135,6 +136,7 @@ function Field({
 }
 
 function PhoneField({ label, name, required }: { label: string; name: string; required?: boolean }) {
+  const [error, setError] = useState<string | null>(null);
   return (
     <div>
       <label className="block text-xs font-medium text-zinc-600 mb-1">
@@ -145,8 +147,22 @@ function PhoneField({ label, name, required }: { label: string; name: string; re
         type="tel"
         required={required}
         placeholder="0541234567"
-        className="block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+        aria-describedby={error ? `${name}-error` : undefined}
+        onChange={(e) => {
+          const val = e.target.value;
+          setError(val.length > 0 ? validateGhanaPhone(val) : null);
+        }}
+        className={`block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-1 ${
+          error
+            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+            : "border-zinc-300 focus:border-blue-500 focus:ring-blue-500"
+        }`}
       />
+      {error && (
+        <p id={`${name}-error`} className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

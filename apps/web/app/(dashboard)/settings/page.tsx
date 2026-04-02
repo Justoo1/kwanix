@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import BrandColorForm from "./brand-color-form";
+import SmsCreditsCard from "./sms-credits-card";
 
 interface CompanyResponse {
   id: number;
@@ -32,7 +33,7 @@ export default async function SettingsPage() {
       </div>
 
       {company && (
-        <div className="rounded-xl border border-zinc-200 bg-white p-6 max-w-lg">
+      <div className="rounded-xl border border-zinc-200 bg-white p-6 max-w-lg">
           <div className="mb-6">
             <h2 className="text-base font-medium text-zinc-800">Company info</h2>
             <div className="mt-3 space-y-1 text-sm text-zinc-600">
@@ -54,6 +55,11 @@ export default async function SettingsPage() {
           </div>
         </div>
       )}
+
+      <div>
+        <h2 className="text-base font-medium text-zinc-800 mb-4">Messaging</h2>
+        <SmsCreditsCard />
+      </div>
     </div>
   );
 }
