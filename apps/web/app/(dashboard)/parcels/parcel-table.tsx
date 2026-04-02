@@ -9,7 +9,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { Printer, CheckCheck, AlertCircle } from "lucide-react";
-import { useParcels, type ParcelRow } from "@/hooks/use-parcels";
+import { type ParcelRow } from "@/hooks/use-parcels";
 import ParcelPrint from "./parcel-print";
 import { markPrinted, getPrintedIds } from "@/lib/print-tracker";
 
@@ -170,17 +170,22 @@ function PrintTrigger({
   );
 }
 
-export default function ParcelTable() {
-  const { data: parcels = [], isLoading, isError } = useParcels();
+export default function ParcelTable({
+  data: parcels,
+  isLoading = false,
+  isError = false,
+}: {
+  data: ParcelRow[];
+  isLoading?: boolean;
+  isError?: boolean;
+}) {
   const [printTarget, setPrintTarget] = useState<ParcelRow | null>(null);
   const [printedIds, setPrintedIds] = useState<Set<number>>(new Set());
 
-  // Load printed IDs from localStorage on mount
   useEffect(() => {
     setPrintedIds(new Set(getPrintedIds()));
   }, []);
 
-  // Refresh the printed set whenever a print completes
   const handlePrintDone = useCallback(() => {
     setPrintTarget(null);
     setPrintedIds(new Set(getPrintedIds()));
