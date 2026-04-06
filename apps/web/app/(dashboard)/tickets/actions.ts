@@ -79,6 +79,9 @@ export async function createTicket(
         if (detail?.code === "SEAT_TAKEN") {
           return { message: `Seat ${body.seat_number} is already taken.` };
         }
+        if (detail?.code === "TRIP_FULL") {
+          return { message: "This trip is fully booked — no seats available." };
+        }
         return { message: typeof detail === "string" ? detail : err.message };
       } catch {
         return { message: err.message };

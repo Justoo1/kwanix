@@ -6,11 +6,20 @@ import {
   Package,
   Ticket,
   Building2,
-  Users,
   TrendingUp,
   Activity,
   Layers,
+  BarChart2,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 import { clientFetch } from "@/lib/client-api";
 import type { TripResponse, TicketResponse, CompanyResponse, UserResponse } from "@/lib/definitions";
@@ -81,9 +90,57 @@ function InfoRow({
   );
 }
 
+// ── Daily stats chart ─────────────────────────────────────────────────────────
+
+interface DailyStatItem {
+  date: string;
+  tickets_sold: number;
+  parcels_created: number;
+  revenue_ghs: number;
+}
+
+function DailyStatsChart() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard", "daily-stats"],
+    queryFn: () => clientFetch<DailyStatItem[]>("admin/stats/daily"),
+    staleTime: 5 * 60_000,
+  });
+
+  const chartData = (data ?? []).map((d) => ({
+    ...d,
+    date: d.date.slice(5), // MM-DD
+  }));
+
+  if (isLoading) {
+    return <div className="h-48 animate-pulse rounded-xl bg-muted" />;
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <BarChart2 className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">7-Day Activity</h2>
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+          <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
+          <Tooltip
+            contentStyle={{ fontSize: 12, borderRadius: 8 }}
+            cursor={{ fill: "hsl(var(--muted))" }}
+          />
+          <Bar dataKey="tickets_sold" name="Tickets" fill="#6366f1" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="parcels_created" name="Parcels" fill="#10b981" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 // ── Operational view (company_admin / station roles) ─────────────────────────
 
-function OperationalStats({ userName }: { userName: string }) {
+function OperationalStats({ userName, isAdmin }: { userName: string; isAdmin: boolean }) {
   const tripsQuery = useQuery({
     queryKey: ["dashboard", "trips"],
     queryFn: () => clientFetch<TripResponse[]>("trips"),
@@ -169,11 +226,21 @@ function OperationalStats({ userName }: { userName: string }) {
           <InfoRow label="Cancelled" value={trips.filter((t) => t.status === "cancelled").length} isLoading={loading} />
         </div>
       </div>
+
+      {/* 7-day sparkline — company_admin only */}
+      {isAdmin && <DailyStatsChart />}
     </div>
   );
 }
 
 // ── Super admin view ──────────────────────────────────────────────────────────
+
+interface AdminStatsData {
+  companies: number;
+  active_trips: number;
+  parcels_today: number;
+  revenue_today_ghs: number;
+}
 
 function AdminStats({ userName }: { userName: string }) {
   const companiesQuery = useQuery({
@@ -186,9 +253,16 @@ function AdminStats({ userName }: { userName: string }) {
     queryFn: () => clientFetch<UserResponse[]>("admin/users"),
   });
 
+  const statsQuery = useQuery({
+    queryKey: ["dashboard", "admin", "stats"],
+    queryFn: () => clientFetch<AdminStatsData>("admin/stats"),
+    staleTime: 60_000,
+  });
+
   const companies = companiesQuery.data ?? [];
   const users = usersQuery.data ?? [];
-  const loading = companiesQuery.isLoading || usersQuery.isLoading;
+  const stats = statsQuery.data;
+  const loading = companiesQuery.isLoading || usersQuery.isLoading || statsQuery.isLoading;
 
   const activeCompanies = companies.filter((c) => c.is_active).length;
   const activeUsers = users.filter((u) => u.is_active).length;
@@ -210,47 +284,50 @@ function AdminStats({ userName }: { userName: string }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Companies"
-          value={companies.length}
+          value={stats?.companies ?? companies.length}
           icon={<Building2 className="h-5 w-5 text-white" />}
           gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
           isLoading={loading}
         />
         <StatCard
-          label="Active Tenants"
-          value={activeCompanies}
-          sub={`${companies.length - activeCompanies} inactive`}
-          icon={<Building2 className="h-5 w-5 text-white" />}
-          gradient="bg-gradient-to-br from-emerald-400 to-teal-600"
-          isLoading={loading}
-        />
-        <StatCard
-          label="Total Users"
-          value={users.length}
-          icon={<Users className="h-5 w-5 text-white" />}
+          label="Active Trips"
+          value={stats?.active_trips ?? 0}
+          sub="Loading or in transit"
+          icon={<Bus className="h-5 w-5 text-white" />}
           gradient="bg-gradient-to-br from-amber-400 to-orange-500"
           isLoading={loading}
         />
         <StatCard
-          label="Active Users"
-          value={activeUsers}
-          sub={`${users.length - activeUsers} inactive`}
-          icon={<Users className="h-5 w-5 text-white" />}
+          label="Parcels Today"
+          value={stats?.parcels_today ?? 0}
+          sub="Logged since midnight"
+          icon={<Package className="h-5 w-5 text-white" />}
+          gradient="bg-gradient-to-br from-emerald-400 to-teal-600"
+          isLoading={loading}
+        />
+        <StatCard
+          label="Revenue Today"
+          value={`GHS ${(stats?.revenue_today_ghs ?? 0).toFixed(2)}`}
+          sub="Parcel fees collected"
+          icon={<TrendingUp className="h-5 w-5 text-white" />}
           gradient="bg-gradient-to-br from-violet-500 to-purple-700"
           isLoading={loading}
         />
       </div>
 
-      {/* Company list quick-view */}
+      {/* Platform summary card */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <Package className="h-4 w-4 text-muted-foreground" />
+          <Layers className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">Platform Summary</h2>
         </div>
         <div className="divide-y divide-border">
-          <InfoRow label="Companies registered" value={companies.length} isLoading={loading} />
+          <InfoRow label="Companies registered" value={stats?.companies ?? companies.length} isLoading={loading} />
           <InfoRow label="Active companies" value={activeCompanies} isLoading={loading} />
           <InfoRow label="Total platform users" value={users.length} isLoading={loading} />
           <InfoRow label="Active users" value={activeUsers} isLoading={loading} />
+          <InfoRow label="Active trips now" value={stats?.active_trips ?? 0} isLoading={loading} />
+          <InfoRow label="Parcels logged today" value={stats?.parcels_today ?? 0} isLoading={loading} />
         </div>
       </div>
     </div>
@@ -268,5 +345,5 @@ export function DashboardStatsView({ role, userName }: DashboardStatsViewProps) 
   if (role === "super_admin") {
     return <AdminStats userName={userName} />;
   }
-  return <OperationalStats userName={userName} />;
+  return <OperationalStats userName={userName} isAdmin={role === "company_admin"} />;
 }

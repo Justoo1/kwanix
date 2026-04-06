@@ -6,12 +6,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Wrench } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { clientFetch } from "@/lib/client-api";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,9 +40,17 @@ interface VehicleResponse {
   model: string | null;
   capacity: number;
   is_active: boolean;
+  is_available: boolean;
 }
 
-// ── Zod schema ────────────────────────────────────────────────────────────────
+// ── Zod schemas ───────────────────────────────────────────────────────────────
+
+const maintenanceSchema = z.object({
+  note: z.string().min(1, "Note is required"),
+  mark_unavailable: z.boolean(),
+});
+
+type MaintenanceValues = z.infer<typeof maintenanceSchema>;
 
 const createVehicleSchema = z.object({
   plate_number: z.string().min(1, "Plate number is required"),
@@ -60,51 +70,198 @@ type CreateVehicleValues = z.infer<typeof createVehicleSchema>;
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
-const columns: ColumnDef<VehicleResponse>[] = [
-  {
-    accessorKey: "plate_number",
-    header: "Plate",
-    cell: ({ row }) => (
-      <span className="font-mono font-semibold text-foreground">
-        {row.original.plate_number}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "model",
-    header: "Model",
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {row.original.model ?? "—"}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "capacity",
-    header: "Capacity",
-    cell: ({ row }) => (
-      <span className="text-sm">
-        {row.original.capacity}{" "}
-        <span className="text-xs text-muted-foreground">seats</span>
-      </span>
-    ),
-  },
-  {
-    accessorKey: "is_active",
-    header: "Status",
-    cell: ({ row }) => (
-      <span
-        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
-          row.original.is_active
-            ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-            : "bg-zinc-100 text-zinc-500 ring-zinc-200"
-        }`}
-      >
-        {row.original.is_active ? "Active" : "Inactive"}
-      </span>
-    ),
-  },
-];
+function buildColumns(
+  canManage: boolean,
+  onMaintenance: (v: VehicleResponse) => void
+): ColumnDef<VehicleResponse>[] {
+  const cols: ColumnDef<VehicleResponse>[] = [
+    {
+      accessorKey: "plate_number",
+      header: "Plate",
+      cell: ({ row }) => (
+        <span className="font-mono font-semibold text-foreground">
+          {row.original.plate_number}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "model",
+      header: "Model",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.model ?? "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "capacity",
+      header: "Capacity",
+      cell: ({ row }) => (
+        <span className="text-sm">
+          {row.original.capacity}{" "}
+          <span className="text-xs text-muted-foreground">seats</span>
+        </span>
+      ),
+    },
+    {
+      accessorKey: "is_active",
+      header: "Status",
+      cell: ({ row }) => (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+            row.original.is_active
+              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+              : "bg-zinc-100 text-zinc-500 ring-zinc-200"
+          }`}
+        >
+          {row.original.is_active ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "is_available",
+      header: "Availability",
+      cell: ({ row }) => (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+            row.original.is_available
+              ? "bg-sky-50 text-sky-700 ring-sky-200"
+              : "bg-red-50 text-red-700 ring-red-200"
+          }`}
+        >
+          {row.original.is_available ? "Available" : "Out of service"}
+        </span>
+      ),
+    },
+  ];
+
+  if (canManage) {
+    cols.push({
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          onClick={() => onMaintenance(row.original)}
+        >
+          <Wrench className="mr-1 h-3 w-3" />
+          Maintenance
+        </Button>
+      ),
+    });
+  }
+
+  return cols;
+}
+
+// ── Maintenance log dialog ────────────────────────────────────────────────────
+
+function MaintenanceDialog({
+  vehicle,
+  open,
+  onOpenChange,
+}: {
+  vehicle: VehicleResponse | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const form = useForm<MaintenanceValues, unknown, MaintenanceValues>({
+    resolver: zodResolver(maintenanceSchema),
+    defaultValues: { note: "", mark_unavailable: false },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: MaintenanceValues) =>
+      clientFetch(`vehicles/${vehicle!.id}/maintenance`, {
+        method: "POST",
+        body: JSON.stringify(values),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      toast.success("Maintenance logged.");
+      form.reset();
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to log maintenance.");
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log Maintenance — {vehicle?.plate_number}</DialogTitle>
+          <DialogDescription>
+            Record a service event. Optionally mark the vehicle as out of
+            service.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+            className="space-y-4"
+          >
+            <FormField
+              control={form.control}
+              name="note"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Note</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="e.g. Oil change, tyre replaced…"
+                      rows={3}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="mark_unavailable"
+              render={({ field }) => (
+                <FormItem className="flex items-center gap-2 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormLabel className="font-normal">
+                    Mark vehicle as out of service
+                  </FormLabel>
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={mutation.isPending}>
+                {mutation.isPending ? "Saving…" : "Log maintenance"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ── Create vehicle dialog ─────────────────────────────────────────────────────
 
@@ -228,15 +385,20 @@ function CreateVehicleDialog({
 
 interface VehiclesViewProps {
   canCreate: boolean;
+  canManage: boolean;
 }
 
-export function VehiclesView({ canCreate }: VehiclesViewProps) {
+export function VehiclesView({ canCreate, canManage }: VehiclesViewProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [maintenanceVehicle, setMaintenanceVehicle] =
+    useState<VehicleResponse | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["vehicles"],
     queryFn: () => clientFetch<VehicleResponse[]>("vehicles"),
   });
+
+  const columns = buildColumns(canManage, (v) => setMaintenanceVehicle(v));
 
   return (
     <div className="space-y-6">
@@ -257,17 +419,19 @@ export function VehiclesView({ canCreate }: VehiclesViewProps) {
       </div>
 
       {/* Table */}
-      <DataTable
-        columns={columns}
-        data={data ?? []}
-        isLoading={isLoading}
-      />
+      <DataTable columns={columns} data={data ?? []} isLoading={isLoading} />
 
-      {/* Dialog */}
+      {/* Dialogs */}
       {canCreate && (
-        <CreateVehicleDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
+        <CreateVehicleDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      )}
+      {canManage && (
+        <MaintenanceDialog
+          vehicle={maintenanceVehicle}
+          open={maintenanceVehicle !== null}
+          onOpenChange={(open) => {
+            if (!open) setMaintenanceVehicle(null);
+          }}
         />
       )}
     </div>

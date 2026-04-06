@@ -156,6 +156,20 @@
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
   }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a[href],
+  label[for],
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"]:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

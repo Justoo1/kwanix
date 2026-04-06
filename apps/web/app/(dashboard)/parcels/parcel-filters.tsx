@@ -25,6 +25,7 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "in_transit",label: "In Transit" },
   { value: "arrived",   label: "Arrived"    },
   { value: "picked_up", label: "Collected"  },
+  { value: "returned",  label: "Returned"   },
 ];
 
 const DATE_OPTIONS: { value: DateRange; label: string }[] = [
@@ -40,6 +41,7 @@ const STATUS_ACTIVE: Record<StatusFilter, string> = {
   in_transit:"bg-blue-600 text-white",
   arrived:   "bg-purple-600 text-white",
   picked_up: "bg-emerald-600 text-white",
+  returned:  "bg-zinc-500 text-white",
 };
 
 export default function ParcelFilters({ filters, onChange, totalCount, filteredCount }: Props) {

@@ -15,6 +15,7 @@ from app.services.parcel_service import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 async def _make_parcel(db, company, station_accra, station_prestea, clerk_user) -> Parcel:
     p = Parcel(
         company_id=company.id,
@@ -49,6 +50,7 @@ async def _make_trip(db, company, vehicle, departure, destination) -> Trip:
 
 
 # ── validate_and_load ─────────────────────────────────────────────────────────
+
 
 class TestValidateAndLoad:
     @pytest.mark.asyncio
@@ -132,6 +134,7 @@ class TestValidateAndLoad:
 
 # ── unload_parcel ─────────────────────────────────────────────────────────────
 
+
 class TestUnloadParcel:
     @pytest.mark.asyncio
     async def test_happy_path_marks_arrived_and_returns_otp(
@@ -171,6 +174,7 @@ class TestUnloadParcel:
 
 
 # ── collect_parcel ────────────────────────────────────────────────────────────
+
 
 class TestCollectParcel:
     async def _arrived_parcel(

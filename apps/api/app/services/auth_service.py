@@ -20,14 +20,22 @@ def hash_password(plain: str) -> str:
 
 
 def create_access_token(user: User) -> str:
-    expire = datetime.now(UTC) + timedelta(
-        minutes=settings.jwt_access_token_expire_minutes
-    )
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload = {
         "sub": str(user.id),
         "company_id": user.company_id,
         "station_id": user.station_id,
         "role": user.role.value,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def create_refresh_token(user: User) -> str:
+    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
+    payload = {
+        "sub": str(user.id),
+        "type": "refresh",
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)

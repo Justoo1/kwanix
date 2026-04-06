@@ -1,12 +1,15 @@
 import "server-only";
 
-import { getSession } from "@/lib/session";
+import { redirect } from "next/navigation";
+
+import { createSession, deleteSession, getSession } from "@/lib/session";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /**
  * Authenticated fetch wrapper for Server Components and Server Actions.
  * Reads the session cookie and injects the Bearer token automatically.
+ * On 401, attempts a token refresh once before redirecting to /login.
  */
 export async function apiFetch<T>(
   path: string,
@@ -27,12 +30,46 @@ export async function apiFetch<T>(
     cache: "no-store",
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, text);
+  if (res.ok) {
+    return res.json() as Promise<T>;
   }
 
-  return res.json() as Promise<T>;
+  if (res.status === 401 && session?.refreshToken) {
+    const refreshRes = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refreshToken }),
+    });
+
+    if (refreshRes.ok) {
+      const { access_token, refresh_token } = await refreshRes.json();
+      await createSession({
+        ...session,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+      });
+
+      // Retry original request with new token
+      headers["Authorization"] = `Bearer ${access_token}`;
+      const retryRes = await fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers,
+        cache: "no-store",
+      });
+
+      if (!retryRes.ok) {
+        const text = await retryRes.text().catch(() => "");
+        throw new ApiError(retryRes.status, text);
+      }
+      return retryRes.json() as Promise<T>;
+    }
+
+    await deleteSession();
+    redirect("/login");
+  }
+
+  const text = await res.text().catch(() => "");
+  throw new ApiError(res.status, text);
 }
 
 export class ApiError extends Error {

@@ -31,6 +31,17 @@ async function proxy(req: NextRequest, { params }: Context) {
     body,
   });
 
+  const contentType = upstream.headers.get("content-type") ?? "";
+
+  // Pass binary responses (PDF, images, etc.) through as-is
+  if (contentType.includes("application/pdf") || contentType.includes("image/")) {
+    const buffer = await upstream.arrayBuffer();
+    const respHeaders: Record<string, string> = { "Content-Type": contentType };
+    const disposition = upstream.headers.get("content-disposition");
+    if (disposition) respHeaders["Content-Disposition"] = disposition;
+    return new NextResponse(buffer, { status: upstream.status, headers: respHeaders });
+  }
+
   const json = await upstream.json().catch(() => null);
   return NextResponse.json(json ?? {}, { status: upstream.status });
 }

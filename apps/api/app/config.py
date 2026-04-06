@@ -24,9 +24,17 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     public_app_url: str = "http://localhost:3000"
+    allowed_origins: list[str] = ["http://localhost:3000"]
 
     # Arkesel low-balance alert threshold (units)
     sms_low_balance_threshold: int = 50
+
+    # Manifest email — optional distribution address for trip departure emails
+    manifest_email: str | None = None
+
+    # Resend — optional; required only when manifest_email is set
+    resend_api_key: str | None = None
+    resend_from_email: str = "manifest@routepass.com"
 
     model_config = SettingsConfigDict(
         env_file=".env",

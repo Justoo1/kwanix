@@ -12,6 +12,7 @@ from app.config import settings
 logger = structlog.get_logger()
 
 PAYSTACK_INITIALIZE_URL = "https://api.paystack.co/transaction/initialize"
+PAYSTACK_REFUND_URL = "https://api.paystack.co/refund"
 
 
 async def initialize_transaction(
@@ -65,4 +66,52 @@ async def initialize_transaction(
         reference=reference,
         authorization_url=data.get("authorization_url"),
     )
+    return data
+
+
+async def refund_transaction(reference: str, amount_kobo: int) -> dict:
+    """
+    Calls POST /refund on Paystack to refund a previously-paid transaction.
+
+    Args:
+        reference: The payment reference of the original transaction.
+        amount_kobo: Amount to refund in smallest currency unit (pesewas for GHS).
+
+    Returns:
+        Paystack data dict for the refund.
+
+    Raises:
+        HTTP 502 if Paystack returns a non-2xx response.
+    """
+    if not settings.paystack_secret_key:
+        logger.warning("paystack.refund.skipped", reason="API key not configured")
+        return {}
+
+    headers = {
+        "Authorization": f"Bearer {settings.paystack_secret_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "transaction": reference,
+        "amount": amount_kobo,
+        "currency": "GHS",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(PAYSTACK_REFUND_URL, json=payload, headers=headers)
+
+    if not response.is_success:
+        logger.error(
+            "paystack.refund.failed",
+            status_code=response.status_code,
+            reference=reference,
+            body=response.text,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider error — Paystack refund returned a non-2xx response",
+        )
+
+    data = response.json().get("data", {})
+    logger.info("paystack.refund.success", reference=reference)
     return data

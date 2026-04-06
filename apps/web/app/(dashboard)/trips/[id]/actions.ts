@@ -18,8 +18,21 @@ export async function updateTripStatus(
       body: JSON.stringify({ status: newStatus }),
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Failed to update status.";
-    return { error: msg };
+    if (err instanceof Error) {
+      // Parse structured FastAPI error detail
+      try {
+        const detail = JSON.parse(err.message);
+        if (detail?.code === "PARCELS_NOT_LOADED") {
+          return {
+            error: `Cannot depart — ${detail.count} parcel(s) still pending on this trip. Load or unload them first.`,
+          };
+        }
+      } catch {
+        // not JSON — fall through to generic message
+      }
+      return { error: err.message };
+    }
+    return { error: "Failed to update status." };
   }
   revalidatePath(`/trips/${tripId}`);
   revalidatePath("/trips");

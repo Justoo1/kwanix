@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy import select, text
@@ -7,13 +7,30 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
+from app.models.company import Company
 from app.models.user import User, UserRole
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+async def get_company_from_api_key(api_key: str, db: AsyncSession) -> Company:
+    """Look up an active company by its API key. Raises 401 if not found."""
+    result = await db.execute(
+        select(Company).where(Company.api_key == api_key, Company.is_active.is_(True))
+    )
+    company = result.scalar_one_or_none()
+    if company is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
+    return company
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     credentials_exc = HTTPException(
@@ -21,6 +38,26 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # ── API key path ──────────────────────────────────────────────────────────
+    if x_api_key:
+        company = await get_company_from_api_key(x_api_key, db)
+        # Return a synthetic user representing the company with company_admin permissions
+        synthetic = User(
+            company_id=company.id,
+            full_name=f"{company.name} (API)",
+            phone="",
+            hashed_password="",
+            role=UserRole.company_admin,
+            is_active=True,
+        )
+        synthetic.company = company  # type: ignore[attr-defined]
+        return synthetic
+
+    # ── JWT path ──────────────────────────────────────────────────────────────
+    if not token:
+        raise credentials_exc
+
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id: int | None = payload.get("sub")
@@ -30,9 +67,7 @@ async def get_current_user(
         raise credentials_exc from None
 
     result = await db.execute(
-        select(User)
-        .where(User.id == int(user_id))
-        .options(selectinload(User.company))
+        select(User).where(User.id == int(user_id)).options(selectinload(User.company))
     )
     user = result.scalar_one_or_none()
 
@@ -52,9 +87,7 @@ async def get_db_for_user(
     if current_user.role != UserRole.super_admin and current_user.company_id:
         # SET LOCAL does not support asyncpg positional parameters — inline the integer.
         # company_id is always a trusted integer from the database, never user-supplied text.
-        await db.execute(
-            text(f"SET LOCAL app.current_company_id = {int(current_user.company_id)}")
-        )
+        await db.execute(text(f"SET LOCAL app.current_company_id = {int(current_user.company_id)}"))
     yield db
 
 

@@ -54,6 +54,12 @@ class Parcel(Base, TimestampMixin):
     weight_kg: Mapped[float | None] = mapped_column(Numeric(10, 2))
     description: Mapped[str | None] = mapped_column(Text)
     fee_ghs: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    declared_value_ghs: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+
+    # Transition timestamps (populated when status changes)
+    loaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Status & OTP
     status: Mapped[ParcelStatus] = mapped_column(
@@ -62,6 +68,9 @@ class Parcel(Base, TimestampMixin):
     otp_code: Mapped[str | None] = mapped_column(String(6))
     otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     otp_attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Return reason (populated when status transitions to 'returned')
+    return_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Idempotency key from client (prevents duplicate on retry)
     idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True)

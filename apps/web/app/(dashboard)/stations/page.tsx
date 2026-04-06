@@ -17,5 +17,6 @@ export default async function StationsPage() {
     redirect("/dashboard");
   }
 
-  return <StationsView canCreate={CREATE_ROLES.includes(role)} />;
+  const canManage = CREATE_ROLES.includes(role);
+  return <StationsView canCreate={canManage} canManage={canManage} />;
 }

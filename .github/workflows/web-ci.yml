@@ -27,6 +27,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Start API (for type generation)
+        working-directory: .
+        run: docker compose up -d api
+
+      - name: Wait for API health
+        working-directory: .
+        run: |
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8000/health && break
+            echo "Waiting for API... ($i/15)"
+            sleep 4
+          done
+
+      - name: Generate TypeScript types from OpenAPI
+        working-directory: .
+        run: bash infrastructure/scripts/generate_types.sh
+
+      - name: Fail if generated types differ from committed version
+        working-directory: .
+        run: git diff --exit-code apps/web/types/api.generated.ts
+
       - name: Type check
         run: npx tsc --noEmit
 

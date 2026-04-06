@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Route,
+  Webhook,
 } from "lucide-react";
 
 import { logout } from "@/actions/auth";
@@ -39,6 +40,7 @@ const companyAdminItems = [
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/webhooks", label: "Webhooks", icon: Webhook },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -175,82 +177,71 @@ function SidebarPanel({ role, onClose }: SidebarPanelProps) {
   );
 }
 
-/* ─── Mobile top bar ────────────────────────────────────────── */
+/* ─── Desktop sidebar — flex column, hidden on mobile ───────── */
 
-function MobileTopBar({
-  onOpen,
-}: {
-  onOpen: () => void;
-}) {
+export default function Sidebar({ role }: { role: UserRole }) {
   return (
-    <header className="flex items-center gap-3 px-4 py-3 bg-sidebar border-b border-sidebar-border md:hidden">
-      <button
-        onClick={onOpen}
-        className="rounded-md p-1.5 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-        aria-label="Open menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-      <div className="flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-sidebar-primary">
-          <Route className="h-3 w-3 text-sidebar-primary-foreground" />
-        </div>
-        <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
-          RoutePass
-        </span>
+    <div className="hidden md:flex md:flex-col md:w-64 md:shrink-0">
+      <div className="sticky top-0 h-screen">
+        <SidebarPanel role={role} />
       </div>
-    </header>
+    </div>
   );
 }
 
-/* ─── Main export ───────────────────────────────────────────── */
+/* ─── Mobile nav — top bar + drawer, placed inside content col ─ */
 
-export default function Sidebar({ role }: { role: UserRole }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+export function MobileNav({ role }: { role: UserRole }) {
+  const [open, setOpen] = useState(false);
 
-  // Prevent body scroll when mobile sidebar is open
   useEffect(() => {
-    if (mobileOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    document.body.style.overflow = open ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [mobileOpen]);
+  }, [open]);
 
+  // Entire mobile nav is hidden on desktop via the wrapper div
   return (
-    <>
-      {/* ── Desktop sidebar — always visible ── */}
-      <div className="hidden md:flex md:flex-col md:w-64 md:shrink-0">
-        <div className="sticky top-0 h-screen">
-          <SidebarPanel role={role} />
+    <div className="md:hidden">
+      {/* Mobile top bar */}
+      <header className="flex items-center gap-3 px-4 py-3 bg-sidebar border-b border-sidebar-border shrink-0">
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-md p-1.5 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-sidebar-primary">
+            <Route className="h-3 w-3 text-sidebar-primary-foreground" />
+          </div>
+          <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
+            RoutePass
+          </span>
         </div>
-      </div>
+      </header>
 
-      {/* ── Mobile top bar ── */}
-      <MobileTopBar onOpen={() => setMobileOpen(true)} />
-
-      {/* ── Mobile drawer overlay ── */}
-      {mobileOpen && (
+      {/* Overlay */}
+      {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden animate-fade-up"
-          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-fade-up"
+          onClick={() => setOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      {/* ── Mobile drawer panel ── */}
+      {/* Drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 md:hidden",
+          "fixed inset-y-0 left-0 z-50 w-64",
           "transform transition-transform duration-200 ease-in-out",
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
+          open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <SidebarPanel role={role} onClose={() => setMobileOpen(false)} />
+        <SidebarPanel role={role} onClose={() => setOpen(false)} />
       </div>
-    </>
+    </div>
   );
 }

@@ -146,9 +146,7 @@ class TestRLSTenantIsolation:
             # ── Query via app role with RLS set to company A ──────────────────
             async with app_engine.connect() as conn:
                 await conn.execute(text("BEGIN"))
-                await conn.execute(
-                    text(f"SET LOCAL app.current_company_id = {int(cid_a)}")
-                )
+                await conn.execute(text(f"SET LOCAL app.current_company_id = {int(cid_a)}"))
                 result = await conn.execute(
                     text("SELECT id FROM parcels WHERE id = :pid"),
                     {"pid": parcel_b_id},
@@ -168,9 +166,7 @@ class TestRLSTenantIsolation:
                 async with admin_engine.connect() as conn:
                     await conn.execute(text("BEGIN"))
                     await conn.execute(
-                        text(
-                            "DELETE FROM companies WHERE company_code IN (:ca, :cb)"
-                        ),
+                        text("DELETE FROM companies WHERE company_code IN (:ca, :cb)"),
                         {"ca": code_a, "cb": code_b},
                     )
                     await conn.execute(text("COMMIT"))
@@ -251,9 +247,7 @@ class TestRLSTenantIsolation:
 
             async with app_engine.connect() as conn:
                 await conn.execute(text("BEGIN"))
-                await conn.execute(
-                    text(f"SET LOCAL app.current_company_id = {int(cid)}")
-                )
+                await conn.execute(text(f"SET LOCAL app.current_company_id = {int(cid)}"))
                 result = await conn.execute(
                     text("SELECT id FROM parcels WHERE id = :pid"),
                     {"pid": parcel_id},

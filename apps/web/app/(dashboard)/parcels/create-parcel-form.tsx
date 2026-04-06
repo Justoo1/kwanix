@@ -17,6 +17,7 @@ export default function CreateParcelForm({
 }: {
   stations: StationOption[];
 }) {
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [state, action, pending] = useActionState<
     CreateParcelState,
     FormData
@@ -57,6 +58,7 @@ export default function CreateParcelForm({
 
   return (
     <form action={action} className="space-y-4">
+      <input type="hidden" name="idempotency_key" value={idempotencyKey} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Sender Name" name="sender_name" required />
         <PhoneField label="Sender Phone" name="sender_phone" required />
@@ -84,7 +86,10 @@ export default function CreateParcelForm({
         <Field label="Fee (GHS)" name="fee_ghs" type="number" step="0.01" defaultValue="0" />
       </div>
 
-      <Field label="Description (optional)" name="description" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Declared value (GHS)" name="declared_value_ghs" type="number" step="0.01" />
+        <Field label="Description (optional)" name="description" />
+      </div>
 
       {state?.message && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

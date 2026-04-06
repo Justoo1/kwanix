@@ -5,7 +5,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Package2, Truck } from "lucide-react"
 import Link from "next/link";
 import { Html5Qrcode } from "html5-qrcode";
 import { useQueryClient } from "@tanstack/react-query";
-import { useActiveTrips, useLoadParcel, useUnloadParcel, useCollectParcel, parcelKeys, type ParcelRow } from "@/hooks/use-parcels";
+import { useActiveTrips, useLoadParcel, useUnloadParcel, useCollectParcel, useBatchUnload, useParcels, parcelKeys, type ParcelRow } from "@/hooks/use-parcels";
 import type { TripResponse } from "@/lib/definitions";
 
 // ── Audio helpers ──────────────────────────────────────────────────────────────
@@ -109,6 +109,8 @@ function LoadTab() {
   const containerRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const lastScanTimestampRef = useRef<number>(0);
+  const consecutiveFailuresRef = useRef(0);
+  const [backoffCountdown, setBackoffCountdown] = useState(0);
 
   const loadMutation = useLoadParcel();
   const queryClient = useQueryClient();
@@ -156,6 +158,8 @@ function LoadTab() {
           tracking_number: decodedText.trim(),
           trip_id: Number(selectedTripId),
         });
+        consecutiveFailuresRef.current = 0;
+        setBackoffCountdown(0);
         playBeep("success");
         setScanResult({
           kind: "success",
@@ -163,6 +167,25 @@ function LoadTab() {
           trackingNumber: result.tracking_number,
         });
       } catch (err) {
+        consecutiveFailuresRef.current += 1;
+        const backoffMs = Math.min(
+          Math.pow(2, consecutiveFailuresRef.current) * 500,
+          30_000,
+        );
+        lastScanTimestampRef.current = Date.now() + backoffMs - 1_000;
+        if (consecutiveFailuresRef.current > 1) {
+          const seconds = Math.ceil(backoffMs / 1_000);
+          setBackoffCountdown(seconds);
+          const interval = setInterval(() => {
+            setBackoffCountdown((prev) => {
+              if (prev <= 1) {
+                clearInterval(interval);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1_000);
+        }
         playBeep("error");
         navigator.vibrate?.([300, 100, 400, 100, 1000]);
 
@@ -262,6 +285,8 @@ function LoadTab() {
     setScanResult(null);
     isProcessingRef.current = false;
     lastScanTimestampRef.current = 0;
+    consecutiveFailuresRef.current = 0;
+    setBackoffCountdown(0);
     // Resume camera preview — scanner is still alive in PAUSED state.
     // Guard with try/catch in case the user navigated away mid-scan.
     if (scannerRef.current) {
@@ -328,6 +353,11 @@ function LoadTab() {
               ref={containerRef}
               className="w-full rounded-lg overflow-hidden"
             />
+            {backoffCountdown > 0 && (
+              <div className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800 text-center">
+                Backend unreachable — retrying in {backoffCountdown}s…
+              </div>
+            )}
             <button
               onClick={() => setScanning(false)}
               className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
@@ -410,7 +440,10 @@ function TripOption({ trip }: { trip: TripResponse }) {
 function UnloadTab() {
   const [parcelId, setParcelId] = useState("");
   const [done, setDone] = useState(false);
+  const [batchResult, setBatchResult] = useState<{ succeeded: number; failed: number } | null>(null);
   const mutation = useUnloadParcel();
+  const batchMutation = useBatchUnload();
+  const { data: inTransitParcels } = useParcels({ status: "in_transit" });
 
   async function submit(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -421,15 +454,46 @@ function UnloadTab() {
     setParcelId("");
   }
 
+  async function handleUnloadAll() {
+    const ids = (inTransitParcels ?? []).map((p) => p.id);
+    if (ids.length === 0) return;
+    const result = await batchMutation.mutateAsync(ids);
+    setBatchResult({ succeeded: result.succeeded.length, failed: result.failed.length });
+  }
+
+  const inTransitCount = (inTransitParcels ?? []).length;
+
   return (
     <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-5 space-y-4">
-      <div className="flex items-center gap-3">
-        <Truck className="h-5 w-5 text-purple-600" />
-        <h2 className="font-semibold text-zinc-900">Unload / Mark Arrived</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Truck className="h-5 w-5 text-purple-600" />
+          <h2 className="font-semibold text-zinc-900">Unload / Mark Arrived</h2>
+        </div>
+        {inTransitCount > 0 && (
+          <button
+            onClick={handleUnloadAll}
+            disabled={batchMutation.isPending}
+            className="rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-200 disabled:opacity-60 transition-colors"
+          >
+            {batchMutation.isPending
+              ? "Unloading…"
+              : `Unload all (${inTransitCount})`}
+          </button>
+        )}
       </div>
       <p className="text-sm text-zinc-500">
         Enter the parcel ID to mark it as arrived at destination. An OTP will be sent to the receiver.
       </p>
+
+      {batchResult && (
+        <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 font-medium">
+          Batch unload: {batchResult.succeeded} arrived
+          {batchResult.failed > 0 && (
+            <span className="text-amber-700"> · {batchResult.failed} failed</span>
+          )}
+        </div>
+      )}
 
       {done && (
         <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 font-medium">

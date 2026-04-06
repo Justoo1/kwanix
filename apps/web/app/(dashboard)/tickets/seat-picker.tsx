@@ -30,9 +30,9 @@ import {
 
 interface Trip {
   id: number;
-  departure_station_name: string;
-  destination_station_name: string;
-  vehicle_plate: string;
+  departure_station_name?: string | null;
+  destination_station_name?: string | null;
+  vehicle_plate?: string | null;
   departure_time: string;
 }
 

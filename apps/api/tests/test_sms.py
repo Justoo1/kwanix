@@ -49,8 +49,10 @@ class TestDispatchSms:
         parcel = Parcel(
             company_id=company.id,
             tracking_number="RP-TST-2026-50001",
-            sender_name="Ama", sender_phone="233541234567",
-            receiver_name="Kofi", receiver_phone="233249876543",
+            sender_name="Ama",
+            sender_phone="233541234567",
+            receiver_name="Kofi",
+            receiver_phone="233249876543",
             origin_station_id=station_accra.id,
             destination_station_id=station_prestea.id,
             fee_ghs=5.0,
@@ -96,7 +98,7 @@ class TestPhoneNormalisationEndToEnd:
             headers={"Authorization": f"Bearer {clerk_token}"},
             json={
                 "sender_name": "Kwame",
-                "sender_phone": "0541234567",   # 054 format — should normalise
+                "sender_phone": "0541234567",  # 054 format — should normalise
                 "receiver_name": "Akosua",
                 "receiver_phone": "0249876543",  # 024 format — should normalise
                 "origin_station_id": station_accra.id,
@@ -113,7 +115,7 @@ class TestPhoneNormalisationEndToEnd:
         log = logs[0]
         assert log.recipient_phone == "233249876543"  # normalised
         assert log.event_type == "parcel_logged"
-        assert log.status == "skipped"               # no API key in test env
+        assert log.status == "skipped"  # no API key in test env
         assert log.error_detail is None
 
     @pytest.mark.asyncio
@@ -131,8 +133,10 @@ class TestPhoneNormalisationEndToEnd:
         parcel = Parcel(
             company_id=company.id,
             tracking_number="RP-TST-2026-50002",
-            sender_name="Ama", sender_phone="233541234567",
-            receiver_name="Kofi", receiver_phone="233249876543",
+            sender_name="Ama",
+            sender_phone="233541234567",
+            receiver_name="Kofi",
+            receiver_phone="233249876543",
             origin_station_id=station_accra.id,
             destination_station_id=station_prestea.id,
             fee_ghs=5.0,
@@ -158,9 +162,7 @@ class TestPhoneNormalisationEndToEnd:
         )
         assert response.status_code == 200
 
-        result = await db.execute(
-            select(SmsLog).where(SmsLog.event_type == "parcel_in_transit")
-        )
+        result = await db.execute(select(SmsLog).where(SmsLog.event_type == "parcel_in_transit"))
         log = result.scalar_one()
         assert log.recipient_phone == "233249876543"
         assert log.status == "skipped"
@@ -191,8 +193,10 @@ class TestPhoneNormalisationEndToEnd:
         parcel = Parcel(
             company_id=company.id,
             tracking_number="RP-TST-2026-50003",
-            sender_name="Ama", sender_phone="233541234567",
-            receiver_name="Kofi", receiver_phone="233249876543",
+            sender_name="Ama",
+            sender_phone="233541234567",
+            receiver_name="Kofi",
+            receiver_phone="233249876543",
             origin_station_id=station_accra.id,
             destination_station_id=station_prestea.id,
             current_trip_id=trip.id,
@@ -210,12 +214,72 @@ class TestPhoneNormalisationEndToEnd:
         )
         assert response.status_code == 200
 
-        result = await db.execute(
-            select(SmsLog).where(SmsLog.event_type == "parcel_arrived")
-        )
+        result = await db.execute(select(SmsLog).where(SmsLog.event_type == "parcel_arrived"))
         log = result.scalar_one()
         assert log.recipient_phone == "233249876543"
         assert log.status == "skipped"
         # OTP must NOT appear in the HTTP response (already verified in phase 3)
         # but it IS in the SMS message body — confirm the message contains a 6-digit code
         assert any(c.isdigit() for c in log.message)
+
+
+# ── G3: msg_parcel_return_sender ──────────────────────────────────────────────
+
+
+class TestParcelReturnSenderSms:
+    """msg_parcel_return_sender helper and return endpoint SMS wiring."""
+
+    def test_message_includes_tracking_number(self):
+        from app.integrations.arkesel import msg_parcel_return_sender
+
+        msg = msg_parcel_return_sender("RP-TST-0001", None)
+        assert "RP-TST-0001" in msg
+        assert "RoutePass" in msg
+
+    def test_message_includes_reason_when_provided(self):
+        from app.integrations.arkesel import msg_parcel_return_sender
+
+        msg = msg_parcel_return_sender("RP-TST-0001", "Address not found")
+        assert "Address not found" in msg
+
+    def test_message_omits_reason_line_when_none(self):
+        from app.integrations.arkesel import msg_parcel_return_sender
+
+        msg = msg_parcel_return_sender("RP-TST-0001", None)
+        assert "Reason:" not in msg
+
+    @pytest.mark.asyncio
+    async def test_return_endpoint_sends_sms_to_sender(
+        self, client, clerk_token, db, company, station_accra, station_prestea, clerk_user
+    ):
+        from app.models.parcel import Parcel, ParcelStatus
+
+        parcel = Parcel(
+            company_id=company.id,
+            tracking_number="RP-TST-G3-001",
+            sender_name="Return Sender",
+            sender_phone="233541111222",
+            receiver_name="Return Receiver",
+            receiver_phone="233249887766",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=8.0,
+            created_by_id=clerk_user.id,
+            status=ParcelStatus.arrived,
+        )
+        db.add(parcel)
+        await db.flush()
+
+        response = await client.patch(
+            f"/api/v1/parcels/{parcel.id}/return",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"reason": "No one available"},
+        )
+        assert response.status_code == 200
+
+        from sqlalchemy import select
+
+        result = await db.execute(select(SmsLog).where(SmsLog.event_type == "parcel_returned"))
+        log = result.scalar_one()
+        assert log.recipient_phone == "233541111222"
+        assert "No one available" in log.message

@@ -106,9 +106,7 @@ def _fake_httpx_client(authorization_url: str = "https://checkout.paystack.com/f
 
 class TestInitiatePayment:
     @pytest.mark.asyncio
-    async def test_happy_path_returns_authorization_url(
-        self, client, clerk_token, pending_ticket
-    ):
+    async def test_happy_path_returns_authorization_url(self, client, clerk_token, pending_ticket):
         with patch(
             "app.integrations.paystack.httpx.AsyncClient",
             return_value=_fake_httpx_client(),
@@ -255,9 +253,7 @@ class TestPaystackWebhook:
         return body, sig
 
     @pytest.mark.asyncio
-    async def test_charge_success_sets_ticket_paid(
-        self, client, pending_ticket, db: AsyncSession
-    ):
+    async def test_charge_success_sets_ticket_paid(self, client, pending_ticket, db: AsyncSession):
         pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00001"
         await db.flush()
 
@@ -277,15 +273,11 @@ class TestPaystackWebhook:
         assert ticket.payment_status == PaymentStatus.paid
 
     @pytest.mark.asyncio
-    async def test_charge_failed_sets_ticket_failed(
-        self, client, pending_ticket, db: AsyncSession
-    ):
+    async def test_charge_failed_sets_ticket_failed(self, client, pending_ticket, db: AsyncSession):
         pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00002"
         await db.flush()
 
-        body, sig = self._build_charge_event(
-            "charge.failed", pending_ticket, event_id=2002
-        )
+        body, sig = self._build_charge_event("charge.failed", pending_ticket, event_id=2002)
         response = await client.post(
             "/api/v1/webhooks/paystack",
             content=body,
@@ -395,3 +387,44 @@ class TestPaystackWebhook:
         result = await db.execute(select(Ticket).where(Ticket.id == pending_ticket.id))
         ticket = result.scalar_one()
         assert ticket.payment_status == PaymentStatus.pending
+
+
+# ── F5: Webhook retry queue ────────────────────────────────────────────────────
+
+
+class TestWebhookRetryQueue:
+    """Tests for WebhookEvent persistence and replay endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_replay_endpoint_requires_super_admin(self, client, clerk_token):
+        response = await client.post(
+            "/api/v1/admin/webhooks/replay",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_replay_endpoint_returns_counts(self, client, db):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import create_access_token, hash_password
+
+        super_admin = User(
+            full_name="Super Admin",
+            phone="233200000010",
+            email="superadmin@routepass.io",
+            hashed_password=hash_password("adminpass"),
+            role=UserRole.super_admin,
+        )
+        db.add(super_admin)
+        await db.flush()
+        token = create_access_token(super_admin)
+
+        response = await client.post(
+            "/api/v1/admin/webhooks/replay",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "replayed" in body
+        assert "failed" in body
+        assert "skipped" in body

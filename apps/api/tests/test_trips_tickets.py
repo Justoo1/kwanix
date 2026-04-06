@@ -4,6 +4,7 @@ Integration tests for Phase 5 — Trips + Tickets CRUD.
 Steps 22–24: trip CRUD, status transitions, ticket creation with seat
 conflict prevention, and trip manifest PDF download.
 """
+
 from datetime import UTC, datetime
 
 import pytest
@@ -102,9 +103,7 @@ class TestCreateTrip:
 
 class TestListTrips:
     @pytest.mark.asyncio
-    async def test_list_trips_returns_enriched_fields(
-        self, client, clerk_token, loading_trip
-    ):
+    async def test_list_trips_returns_enriched_fields(self, client, clerk_token, loading_trip):
         response = await client.get(
             "/api/v1/trips",
             headers={"Authorization": f"Bearer {clerk_token}"},
@@ -120,8 +119,15 @@ class TestListTrips:
 
     @pytest.mark.asyncio
     async def test_filter_by_status_loading(
-        self, client, clerk_token, loading_trip, db, company, vehicle,
-        station_accra, station_prestea
+        self,
+        client,
+        clerk_token,
+        loading_trip,
+        db,
+        company,
+        vehicle,
+        station_accra,
+        station_prestea,
     ):
         # Add a scheduled trip alongside the loading one
         scheduled = Trip(
@@ -219,9 +225,7 @@ class TestTripStatusTransitions:
         assert response.json()["status"] == "loading"
 
     @pytest.mark.asyncio
-    async def test_loading_to_departed(
-        self, client, manager_token, loading_trip
-    ):
+    async def test_loading_to_departed(self, client, manager_token, loading_trip):
         response = await client.patch(
             f"/api/v1/trips/{loading_trip.id}/status",
             headers={"Authorization": f"Bearer {manager_token}"},
@@ -319,9 +323,7 @@ class TestTripStatusTransitions:
         assert response.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_clerk_cannot_change_status_returns_403(
-        self, client, clerk_token, loading_trip
-    ):
+    async def test_clerk_cannot_change_status_returns_403(self, client, clerk_token, loading_trip):
         response = await client.patch(
             f"/api/v1/trips/{loading_trip.id}/status",
             headers={"Authorization": f"Bearer {clerk_token}"},
@@ -512,9 +514,7 @@ class TestGetTicket:
 
 class TestTripManifest:
     @pytest.mark.asyncio
-    async def test_manifest_returns_pdf_bytes(
-        self, client, manager_token, loading_trip
-    ):
+    async def test_manifest_returns_pdf_bytes(self, client, manager_token, loading_trip):
         response = await client.get(
             f"/api/v1/trips/{loading_trip.id}/manifest",
             headers={"Authorization": f"Bearer {manager_token}"},
@@ -548,9 +548,7 @@ class TestTripManifest:
         assert len(response.content) > 1000  # real PDF with content
 
     @pytest.mark.asyncio
-    async def test_clerk_cannot_get_manifest_returns_403(
-        self, client, clerk_token, loading_trip
-    ):
+    async def test_clerk_cannot_get_manifest_returns_403(self, client, clerk_token, loading_trip):
         response = await client.get(
             f"/api/v1/trips/{loading_trip.id}/manifest",
             headers={"Authorization": f"Bearer {clerk_token}"},
@@ -564,3 +562,295 @@ class TestTripManifest:
             headers={"Authorization": f"Bearer {manager_token}"},
         )
         assert response.status_code == 404
+
+
+# ── C5: Trip departure blocked by pending parcels ──────────────────────────────
+
+
+class TestTripDepartureValidation:
+    @pytest.mark.asyncio
+    async def test_depart_with_pending_parcel_returns_400(
+        self,
+        client,
+        manager_token,
+        db,
+        company,
+        vehicle,
+        station_accra,
+        station_prestea,
+        clerk_user,
+    ):
+        from app.models.parcel import Parcel, ParcelStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        # Parcel assigned to this trip but still pending (not yet loaded)
+        parcel = Parcel(
+            company_id=company.id,
+            tracking_number="RP-TST-DEP-00001",
+            sender_name="Sender",
+            sender_phone="233541234567",
+            receiver_name="Receiver",
+            receiver_phone="233549876543",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=10.0,
+            created_by_id=clerk_user.id,
+            status=ParcelStatus.pending,
+            current_trip_id=trip.id,
+        )
+        db.add(parcel)
+        await db.flush()
+
+        response = await client.patch(
+            f"/api/v1/trips/{trip.id}/status",
+            headers={"Authorization": f"Bearer {manager_token}"},
+            json={"status": "departed"},
+        )
+        assert response.status_code == 400
+        body = response.json()
+        assert body["detail"]["code"] == "PARCELS_NOT_LOADED"
+        assert body["detail"]["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_depart_with_no_pending_parcels_succeeds(
+        self,
+        client,
+        manager_token,
+        loading_trip,
+    ):
+        """Trip with no parcels (or all in_transit) can depart normally."""
+        response = await client.patch(
+            f"/api/v1/trips/{loading_trip.id}/status",
+            headers={"Authorization": f"Bearer {manager_token}"},
+            json={"status": "departed"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "departed"
+
+
+# ── D5: Manifest email via Resend ──────────────────────────────────────────────
+
+
+class TestManifestEmail:
+    @pytest.mark.asyncio
+    async def test_email_sent_on_departure_when_configured(
+        self,
+        client,
+        manager_token,
+        loading_trip,
+        monkeypatch,
+    ):
+        """When manifest_email and resend_api_key are set, httpx.post is called on depart."""
+        from unittest.mock import MagicMock, patch
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "manifest_email", "ops@example.com")
+        monkeypatch.setattr(settings, "resend_api_key", "re_test_key")
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("app.integrations.email.httpx.post", return_value=mock_response) as mock_post:
+            response = await client.patch(
+                f"/api/v1/trips/{loading_trip.id}/status",
+                headers={"Authorization": f"Bearer {manager_token}"},
+                json={"status": "departed"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "departed"
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        assert call_kwargs[0][0] == "https://api.resend.com/emails"
+        payload = call_kwargs[1]["json"]
+        assert payload["to"] == ["ops@example.com"]
+        assert "manifest" in payload["subject"].lower()
+        assert len(payload["attachments"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_email_skipped_when_not_configured(
+        self,
+        client,
+        manager_token,
+        loading_trip,
+        monkeypatch,
+    ):
+        """Departure succeeds and no HTTP call is made when manifest_email is unset."""
+        from unittest.mock import patch
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "manifest_email", None)
+
+        with patch("app.integrations.email.httpx.post") as mock_post:
+            response = await client.patch(
+                f"/api/v1/trips/{loading_trip.id}/status",
+                headers={"Authorization": f"Bearer {manager_token}"},
+                json={"status": "departed"},
+            )
+
+        assert response.status_code == 200
+        mock_post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_email_failure_does_not_block_departure(
+        self,
+        client,
+        manager_token,
+        loading_trip,
+        monkeypatch,
+    ):
+        """A Resend API error must not cause the trip status update to fail."""
+        from unittest.mock import patch
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "manifest_email", "ops@example.com")
+        monkeypatch.setattr(settings, "resend_api_key", "re_test_key")
+
+        with patch("app.integrations.email.httpx.post", side_effect=Exception("network error")):
+            response = await client.patch(
+                f"/api/v1/trips/{loading_trip.id}/status",
+                headers={"Authorization": f"Bearer {manager_token}"},
+                json={"status": "departed"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "departed"
+
+
+# ── G4: Trip Reminders ─────────────────────────────────────────────────────────
+
+
+class TestTripReminders:
+    """POST /api/v1/admin/trips/send-reminders"""
+
+    @pytest.fixture
+    async def admin_user(self, db, company):
+        u = User(
+            company_id=company.id,
+            full_name="Trip Admin",
+            phone="233200111222",
+            email="tripadmin@test.io",
+            hashed_password=hash_password("testpass123"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        return create_access_token(admin_user)
+
+    @pytest.fixture
+    async def departing_soon_trip(self, db, company, vehicle, station_accra, station_prestea):
+        from datetime import UTC, timedelta
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(minutes=90),
+            status=TripStatus.scheduled,
+        )
+        db.add(trip)
+        await db.flush()
+        return trip
+
+    @pytest.fixture
+    async def far_future_trip(self, db, company, vehicle, station_accra, station_prestea):
+        from datetime import UTC, timedelta
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(hours=5),
+            status=TripStatus.scheduled,
+        )
+        db.add(trip)
+        await db.flush()
+        return trip
+
+    @pytest.fixture
+    async def ticket_on_trip(self, db, company, departing_soon_trip):
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
+
+        t = Ticket(
+            company_id=company.id,
+            trip_id=departing_soon_trip.id,
+            passenger_name="Kwame Passenger",
+            passenger_phone="233541999888",
+            seat_number=5,
+            fare_ghs=20.0,
+            status=TicketStatus.valid,
+            payment_status=PaymentStatus.pending,
+            source=TicketSource.counter,
+        )
+        db.add(t)
+        await db.flush()
+        return t
+
+    @pytest.mark.asyncio
+    async def test_reminders_sent_for_departing_trip(
+        self, client, admin_token, departing_soon_trip, ticket_on_trip
+    ):
+        response = await client.post(
+            "/api/v1/admin/trips/send-reminders",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reminders_sent"] == 1
+        assert body["trips_checked"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_reminders_idempotent(
+        self, client, admin_token, departing_soon_trip, ticket_on_trip
+    ):
+        # First call
+        r1 = await client.post(
+            "/api/v1/admin/trips/send-reminders",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert r1.json()["reminders_sent"] == 1
+
+        # Second call — already sent, should be 0
+        r2 = await client.post(
+            "/api/v1/admin/trips/send-reminders",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert r2.json()["reminders_sent"] == 0
+
+    @pytest.mark.asyncio
+    async def test_far_future_trip_excluded(self, client, admin_token, far_future_trip):
+
+        response = await client.post(
+            "/api/v1/admin/trips/send-reminders",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        # far future trip is outside the 2-hour window — no reminders
+        assert response.json()["reminders_sent"] == 0
+
+    @pytest.mark.asyncio
+    async def test_reminders_requires_admin_role(self, client, clerk_token):
+        response = await client.post(
+            "/api/v1/admin/trips/send-reminders",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert response.status_code == 403

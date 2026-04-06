@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, String, Text
+from typing import Any
+
+from sqlalchemy import JSON, Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -15,6 +17,7 @@ class Company(Base, TimestampMixin):
     logo_url: Mapped[str | None] = mapped_column(Text)
     brand_color: Mapped[str | None] = mapped_column(String(7))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    weight_tiers: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     stations: Mapped[list["Station"]] = relationship(back_populates="company")  # noqa: F821

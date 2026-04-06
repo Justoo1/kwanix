@@ -31,6 +31,7 @@ class User(Base, TimestampMixin):
         Enum(UserRole, name="userrole"), nullable=False, default=UserRole.station_clerk
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sms_opt_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     company: Mapped["Company | None"] = relationship(back_populates="users")  # noqa: F821

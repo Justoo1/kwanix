@@ -7,9 +7,9 @@ from app.models.sms_log import SmsLog
 from app.models.station import Station
 from app.models.ticket import PaymentStatus, Ticket, TicketStatus
 from app.models.tracking_sequence import TrackingSequence
-from app.models.trip import Trip, TripStatus
+from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
-from app.models.vehicle import Vehicle
+from app.models.vehicle import Vehicle, VehicleMaintenanceLog
 
 __all__ = [
     "Base",
@@ -19,8 +19,10 @@ __all__ = [
     "UserRole",
     "Station",
     "Vehicle",
+    "VehicleMaintenanceLog",
     "Trip",
     "TripStatus",
+    "TripStop",
     "Parcel",
     "ParcelLog",
     "ParcelStatus",

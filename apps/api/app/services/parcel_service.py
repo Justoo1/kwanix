@@ -98,6 +98,7 @@ async def validate_and_load(
     previous_status = parcel.status
     parcel.status = ParcelStatus.in_transit
     parcel.current_trip_id = trip.id
+    parcel.loaded_at = datetime.now(UTC)
 
     # Audit log
     log = ParcelLog(
@@ -133,6 +134,7 @@ async def unload_parcel(db: AsyncSession, parcel_id: int, clerk_id: int) -> tupl
     parcel.otp_code = otp_code
     parcel.otp_expires_at = otp_expires_at
     parcel.otp_attempt_count = 0
+    parcel.arrived_at = datetime.now(UTC)
 
     log = ParcelLog(
         parcel_id=parcel.id,
@@ -145,6 +147,38 @@ async def unload_parcel(db: AsyncSession, parcel_id: int, clerk_id: int) -> tupl
     db.add(log)
     await db.flush()
     return parcel, otp_code
+
+
+async def return_parcel(
+    db: AsyncSession,
+    parcel_id: int,
+    clerk_id: int,
+    reason: str | None,
+) -> Parcel:
+    """Marks a parcel as returned. Parcel must be in 'arrived' status."""
+    parcel = await get_parcel_or_404(db, parcel_id)
+
+    if parcel.status != ParcelStatus.arrived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_STATUS", "current": parcel.status.value},
+        )
+
+    previous_status = parcel.status
+    parcel.status = ParcelStatus.returned
+    parcel.return_reason = reason
+
+    log = ParcelLog(
+        parcel_id=parcel.id,
+        clerk_id=clerk_id,
+        previous_status=previous_status.value,
+        new_status=ParcelStatus.returned.value,
+        note=reason or "Returned to sender",
+        occurred_at=datetime.now(UTC),
+    )
+    db.add(log)
+    await db.flush()
+    return parcel
 
 
 async def collect_parcel(
@@ -187,6 +221,7 @@ async def collect_parcel(
     parcel.status = ParcelStatus.picked_up
     parcel.otp_code = None
     parcel.otp_expires_at = None
+    parcel.collected_at = datetime.now(UTC)
 
     log = ParcelLog(
         parcel_id=parcel.id,

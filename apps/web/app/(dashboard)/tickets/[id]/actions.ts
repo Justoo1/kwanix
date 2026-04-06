@@ -1,6 +1,21 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { apiFetch } from "@/lib/api";
+
+export async function cancelTicket(
+  ticketId: number
+): Promise<{ error?: string; success?: boolean }> {
+  try {
+    await apiFetch(`/api/v1/tickets/${ticketId}/cancel`, { method: "PATCH" });
+    revalidatePath(`/tickets/${ticketId}`);
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to cancel ticket.";
+    return { error: msg };
+  }
+}
 
 export async function shareTicket(
   ticketId: number,

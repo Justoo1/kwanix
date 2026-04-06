@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import type { SessionPayload } from "@/lib/definitions";
 
 const COOKIE_NAME = "rp_session";
-const SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (matches refresh token lifetime)
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET ?? "routepass-dev-secret-32chars!!";

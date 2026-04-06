@@ -3,7 +3,9 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
+import CancelButton from "./cancel-button";
 import PrintButton from "./print-button";
+import QrButton from "./qr-button";
 import ShareButton from "./share-button";
 
 interface TicketDetail {
@@ -85,12 +87,16 @@ export default async function TicketDetailPage({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          <QrButton ticketId={ticket.id} />
           <ShareButton
             ticketId={ticket.id}
             defaultPhone={hasRealPhone ? ticket.passenger_phone : null}
             ticketUrl={ticketUrl}
           />
           <PrintButton />
+          {ticket.status !== "cancelled" && (
+            <CancelButton ticketId={ticket.id} />
+          )}
         </div>
       </div>
 

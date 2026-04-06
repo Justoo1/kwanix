@@ -1,31 +1,35 @@
-
 import contextlib
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
-from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import Response
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies.auth import get_current_user, get_db_for_user
+from app.dependencies.auth import get_current_user, get_db_for_user, require_role
 from app.integrations.arkesel import (
     dispatch_sms,
     msg_parcel_arrived,
     msg_parcel_in_transit,
     msg_parcel_logged,
+    msg_parcel_pickup_reminder,
+    msg_parcel_return_sender,
 )
-from app.models.parcel import Parcel, ParcelStatus
-from app.models.user import User
+from app.models.company import Company
+from app.models.parcel import Parcel, ParcelLog, ParcelStatus
+from app.models.user import User, UserRole
 from app.services.parcel_service import (
     collect_parcel,
-    get_parcel_by_tracking_or_404,
     get_parcel_or_404,
+    return_parcel,
     unload_parcel,
     validate_and_load,
 )
 from app.services.qr_service import generate_qr_base64
 from app.services.tracking_number import generate_tracking_number
+from app.utils.pdf import generate_receipt_pdf
 from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()
@@ -35,15 +39,16 @@ router = APIRouter()
 
 
 class CreateParcelRequest(BaseModel):
-    sender_name: str
-    sender_phone: str
-    receiver_name: str
-    receiver_phone: str
+    sender_name: str = Field(..., max_length=100)
+    sender_phone: str = Field(..., max_length=20)
+    receiver_name: str = Field(..., max_length=100)
+    receiver_phone: str = Field(..., max_length=20)
     origin_station_id: int
     destination_station_id: int
     weight_kg: float | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=500)
     fee_ghs: float = 0.0
+    declared_value_ghs: float | None = None
     idempotency_key: str | None = None
 
     @field_validator("sender_phone", "receiver_phone", mode="before")
@@ -68,15 +73,19 @@ class ParcelResponse(BaseModel):
     destination_station_name: str | None = None
     weight_kg: float | None = None
     fee_ghs: float
+    declared_value_ghs: float | None = None
     description: str | None = None
     created_at: datetime | None = None
+    loaded_at: datetime | None = None
+    arrived_at: datetime | None = None
+    collected_at: datetime | None = None
     qr_code_base64: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class LoadParcelRequest(BaseModel):
-    tracking_number: str
+    parcel_id: int
     trip_id: int
 
 
@@ -85,8 +94,37 @@ class UnloadParcelRequest(BaseModel):
 
 
 class CollectParcelRequest(BaseModel):
-    tracking_number: str
-    otp: str
+    tracking_number: str = Field(..., max_length=25)
+    otp: str = Field(..., max_length=6)
+
+
+class ReturnParcelRequest(BaseModel):
+    reason: str | None = Field(None, max_length=200)
+
+
+class BatchUnloadRequest(BaseModel):
+    parcel_ids: list[int] = Field(..., min_length=1)
+
+
+class BatchUnloadFailure(BaseModel):
+    id: int
+    error: str
+
+
+class BatchUnloadResponse(BaseModel):
+    succeeded: list[int]
+    failed: list[BatchUnloadFailure]
+
+
+class ParcelLogEntry(BaseModel):
+    id: int
+    previous_status: str | None
+    new_status: str
+    note: str | None
+    occurred_at: datetime
+    clerk_name: str | None = None
+
+    model_config = {"from_attributes": True}
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -107,6 +145,20 @@ async def create_parcel(
         if existing_parcel := existing.scalar_one_or_none():
             return _parcel_to_response(existing_parcel)
 
+    # Auto-calculate fee from company weight tiers when fee is 0 and weight is given
+    resolved_fee = body.fee_ghs
+    if resolved_fee == 0 and body.weight_kg is not None:
+        company_result = await db.execute(
+            select(Company).where(Company.id == current_user.company_id)
+        )
+        company_obj = company_result.scalar_one_or_none()
+        if company_obj and company_obj.weight_tiers:
+            for tier in company_obj.weight_tiers:
+                max_kg = tier.get("max_kg")
+                if max_kg is None or body.weight_kg <= max_kg:
+                    resolved_fee = float(tier.get("fee_ghs", 0))
+                    break
+
     tracking_number = await generate_tracking_number(
         db,
         current_user.company_id,
@@ -124,7 +176,8 @@ async def create_parcel(
         destination_station_id=body.destination_station_id,
         weight_kg=body.weight_kg,
         description=body.description,
-        fee_ghs=body.fee_ghs,
+        fee_ghs=resolved_fee,
+        declared_value_ghs=body.declared_value_ghs,
         created_by_id=current_user.id,
         idempotency_key=body.idempotency_key,
         status=ParcelStatus.pending,
@@ -145,6 +198,7 @@ async def create_parcel(
             parcel.tracking_number,
         ),
         "parcel_logged",
+        current_user.sms_opt_out,
     )
 
     response = _parcel_to_response(parcel, include_stations=True)
@@ -155,21 +209,39 @@ async def create_parcel(
 @router.get("", response_model=list[ParcelResponse])
 async def list_parcels(
     parcel_status: str | None = Query(None, alias="status"),
+    q: str | None = Query(None),
+    origin_station_id: int | None = Query(None),
+    destination_station_id: int | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    q = (
+    stmt = (
         select(Parcel)
         .options(
             selectinload(Parcel.origin_station),
             selectinload(Parcel.destination_station),
         )
         .order_by(Parcel.id.desc())
-        .limit(200)
     )
     if parcel_status and parcel_status in ParcelStatus.__members__:
-        q = q.where(Parcel.status == ParcelStatus[parcel_status])
-    result = await db.execute(q)
+        stmt = stmt.where(Parcel.status == ParcelStatus[parcel_status])
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Parcel.tracking_number.ilike(pattern),
+                Parcel.sender_name.ilike(pattern),
+                Parcel.receiver_name.ilike(pattern),
+            )
+        )
+    if origin_station_id is not None:
+        stmt = stmt.where(Parcel.origin_station_id == origin_station_id)
+    if destination_station_id is not None:
+        stmt = stmt.where(Parcel.destination_station_id == destination_station_id)
+    stmt = stmt.offset(offset).limit(limit)
+    result = await db.execute(stmt)
     return [_parcel_to_response(p, include_stations=True) for p in result.scalars().all()]
 
 
@@ -180,8 +252,7 @@ async def load_parcel(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    parcel_lookup = await get_parcel_by_tracking_or_404(db, body.tracking_number)
-    parcel = await validate_and_load(db, parcel_lookup.id, body.trip_id, current_user.id)
+    parcel = await validate_and_load(db, body.parcel_id, body.trip_id, current_user.id)
     await db.commit()
     await db.refresh(parcel, ["destination_station", "current_trip"])
 
@@ -198,6 +269,7 @@ async def load_parcel(
             parcel.tracking_number,
         ),
         "parcel_in_transit",
+        current_user.sms_opt_out,
     )
 
     return {
@@ -229,6 +301,7 @@ async def unload_parcel_endpoint(
             parcel.tracking_number,
         ),
         "parcel_arrived",
+        current_user.sms_opt_out,
     )
 
     return {
@@ -236,6 +309,71 @@ async def unload_parcel_endpoint(
         "message": "Parcel marked as arrived. OTP sent to receiver.",
         "tracking_number": parcel.tracking_number,
     }
+
+
+@router.post("/batch-unload", response_model=BatchUnloadResponse)
+async def batch_unload_parcels(
+    body: BatchUnloadRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """
+    Bulk-unload multiple parcels. Returns per-parcel success/failure.
+    Sends a single consolidated SMS per unique receiver phone.
+    """
+    succeeded: list[int] = []
+    failed: list[BatchUnloadFailure] = []
+    # phone -> (otp_code, station_name, [tracking_numbers])
+    arrivals: dict[str, tuple[str, str, list[str]]] = {}
+
+    for parcel_id in body.parcel_ids:
+        try:
+            parcel, otp_code = await unload_parcel(db, parcel_id, current_user.id)
+            await db.flush()
+            await db.refresh(parcel, ["destination_station"])
+            station_name = parcel.destination_station.name
+            phone = parcel.receiver_phone
+            if phone not in arrivals:
+                arrivals[phone] = (otp_code, station_name, [parcel.tracking_number])
+            else:
+                arrivals[phone][2].append(parcel.tracking_number)
+            succeeded.append(parcel_id)
+        except HTTPException as exc:
+            detail = exc.detail
+            error_msg = detail if isinstance(detail, str) else str(detail)
+            failed.append(BatchUnloadFailure(id=parcel_id, error=error_msg))
+
+    await db.commit()
+
+    # Send one SMS per unique receiver phone
+    for phone, (otp_code, station_name, tracking_numbers) in arrivals.items():
+        if len(tracking_numbers) == 1:
+            sms_body = msg_parcel_arrived(station_name, otp_code, tracking_numbers[0])
+        else:
+            joined = ", ".join(tracking_numbers)
+            sms_body = (
+                f"Your {len(tracking_numbers)} parcels ({joined}) have arrived at {station_name}. "
+                f"OTP for collection: {otp_code}"
+            )
+        background_tasks.add_task(
+            dispatch_sms,
+            db,
+            None,
+            phone,
+            sms_body,
+            "parcel_arrived",
+            current_user.sms_opt_out,
+        )
+
+    return BatchUnloadResponse(succeeded=succeeded, failed=failed)
 
 
 @router.post("/collect")
@@ -254,6 +392,148 @@ async def collect_parcel_endpoint(
     }
 
 
+@router.get(
+    "/export",
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def export_parcels_csv(
+    parcel_status: str | None = Query(None, alias="status"),
+    q: str | None = Query(None),
+    origin_station_id: int | None = Query(None),
+    destination_station_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Export parcels matching the given filters as a CSV file."""
+    import csv
+    import io
+
+    stmt = (
+        select(Parcel)
+        .options(
+            selectinload(Parcel.origin_station),
+            selectinload(Parcel.destination_station),
+        )
+        .order_by(Parcel.id.desc())
+    )
+    if parcel_status and parcel_status in ParcelStatus.__members__:
+        stmt = stmt.where(Parcel.status == ParcelStatus[parcel_status])
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Parcel.tracking_number.ilike(pattern),
+                Parcel.sender_name.ilike(pattern),
+                Parcel.receiver_name.ilike(pattern),
+            )
+        )
+    if origin_station_id is not None:
+        stmt = stmt.where(Parcel.origin_station_id == origin_station_id)
+    if destination_station_id is not None:
+        stmt = stmt.where(Parcel.destination_station_id == destination_station_id)
+
+    result = await db.execute(stmt)
+    parcels = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "tracking_number",
+            "status",
+            "sender_name",
+            "sender_phone",
+            "receiver_name",
+            "receiver_phone",
+            "origin_station",
+            "destination_station",
+            "weight_kg",
+            "fee_ghs",
+            "description",
+            "created_at",
+            "loaded_at",
+            "arrived_at",
+            "collected_at",
+        ]
+    )
+    for p in parcels:
+        origin_name: str | None = None
+        dest_name: str | None = None
+        with contextlib.suppress(Exception):
+            origin_name = p.origin_station.name
+        with contextlib.suppress(Exception):
+            dest_name = p.destination_station.name
+        writer.writerow(
+            [
+                p.tracking_number,
+                p.status.value,
+                p.sender_name,
+                p.sender_phone,
+                p.receiver_name,
+                p.receiver_phone,
+                origin_name if origin_name else p.origin_station_id,
+                dest_name if dest_name else p.destination_station_id,
+                p.weight_kg,
+                float(p.fee_ghs),
+                p.description or "",
+                p.created_at.isoformat() if p.created_at else "",
+                p.loaded_at.isoformat() if p.loaded_at else "",
+                p.arrived_at.isoformat() if p.arrived_at else "",
+                p.collected_at.isoformat() if p.collected_at else "",
+            ]
+        )
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="parcels.csv"'},
+    )
+
+
+@router.get(
+    "/overdue",
+    response_model=list[ParcelResponse],
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def get_overdue_parcels(
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Return arrived parcels that have been uncollected for more than 3 days."""
+    cutoff = datetime.now(UTC) - timedelta(days=3)
+    stmt = (
+        select(Parcel)
+        .options(
+            selectinload(Parcel.origin_station),
+            selectinload(Parcel.destination_station),
+        )
+        .where(
+            Parcel.status == ParcelStatus.arrived,
+            Parcel.arrived_at < cutoff,
+        )
+        .order_by(Parcel.arrived_at.asc())
+    )
+    result = await db.execute(stmt)
+    return [_parcel_to_response(p, include_stations=True) for p in result.scalars().all()]
+
+
 @router.get("/{parcel_id}", response_model=ParcelResponse)
 async def get_parcel(
     parcel_id: int,
@@ -262,6 +542,175 @@ async def get_parcel(
 ):
     parcel = await get_parcel_or_404(db, parcel_id)
     return _parcel_to_response(parcel)
+
+
+@router.get("/{parcel_id}/logs", response_model=list[ParcelLogEntry])
+async def get_parcel_logs(
+    parcel_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    _: User = Depends(
+        require_role(UserRole.station_manager, UserRole.company_admin, UserRole.super_admin)
+    ),
+):
+    result = await db.execute(
+        select(ParcelLog)
+        .where(ParcelLog.parcel_id == parcel_id)
+        .options(selectinload(ParcelLog.clerk))
+        .order_by(ParcelLog.occurred_at.asc())
+    )
+    logs = result.scalars().all()
+    return [
+        ParcelLogEntry(
+            id=log.id,
+            previous_status=log.previous_status,
+            new_status=log.new_status,
+            note=log.note,
+            occurred_at=log.occurred_at,
+            clerk_name=log.clerk.full_name if log.clerk else None,
+        )
+        for log in logs
+    ]
+
+
+@router.patch("/{parcel_id}/return", response_model=ParcelResponse)
+async def return_parcel_endpoint(
+    parcel_id: int,
+    body: ReturnParcelRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    parcel = await return_parcel(db, parcel_id, current_user.id, body.reason)
+    await db.commit()
+    await db.refresh(parcel, ["origin_station", "destination_station"])
+
+    background_tasks.add_task(
+        dispatch_sms,
+        db,
+        parcel.id,
+        parcel.sender_phone,
+        msg_parcel_return_sender(parcel.tracking_number, body.reason),
+        "parcel_returned",
+        current_user.sms_opt_out,
+    )
+
+    return _parcel_to_response(parcel, include_stations=True)
+
+
+@router.get("/{parcel_id}/receipt")
+async def get_parcel_receipt(
+    parcel_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """Download a PDF receipt for a collected parcel (status must be picked_up)."""
+    parcel = await get_parcel_or_404(db, parcel_id)
+    if parcel.status != ParcelStatus.picked_up:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "NOT_COLLECTED",
+                "message": "Receipt is only available for collected parcels.",
+            },
+        )
+    company_result = await db.execute(select(Company).where(Company.id == parcel.company_id))
+    company = company_result.scalar_one_or_none()
+    pdf_bytes = generate_receipt_pdf(
+        parcel,
+        company_name=company.name if company else None,
+        brand_color=company.brand_color if company else None,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="receipt-{parcel.tracking_number}.pdf"'
+        },
+    )
+
+
+class RemindResponse(BaseModel):
+    sms_sent: bool
+
+
+@router.post(
+    "/{parcel_id}/remind",
+    response_model=RemindResponse,
+)
+async def remind_pickup(
+    parcel_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """Send a pickup reminder SMS to the receiver if the parcel has been arrived >24h."""
+    from app.models.sms_log import SmsLog
+
+    parcel = await get_parcel_or_404(db, parcel_id)
+
+    if parcel.status != ParcelStatus.arrived:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "NOT_ARRIVED",
+                "message": "Reminders can only be sent for arrived parcels.",
+            },  # noqa: E501
+        )
+
+    cutoff_24h = datetime.now(UTC) - timedelta(hours=24)
+    if parcel.arrived_at is None or parcel.arrived_at > cutoff_24h:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "TOO_SOON",
+                "message": "Parcel must have been arrived for at least 24 hours.",
+            },
+        )
+
+    # Spam guard: skip if a reminder was sent in the last 24h for this parcel
+    recent_result = await db.execute(
+        select(SmsLog).where(
+            SmsLog.parcel_id == parcel_id,
+            SmsLog.event_type == "parcel_pickup_reminder",
+            SmsLog.sent_at >= cutoff_24h,
+        )
+    )
+    if recent_result.scalar_one_or_none():
+        return RemindResponse(sms_sent=False)
+
+    await db.refresh(parcel, ["destination_station"])
+    station_name = parcel.destination_station.name
+
+    background_tasks.add_task(
+        dispatch_sms,
+        db,
+        parcel.id,
+        parcel.receiver_phone,
+        msg_parcel_pickup_reminder(parcel.tracking_number, station_name),
+        "parcel_pickup_reminder",
+    )
+    return RemindResponse(sms_sent=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -288,6 +737,12 @@ def _parcel_to_response(parcel: Parcel, include_stations: bool = False) -> Parce
         destination_station_name=dest_name,
         weight_kg=float(parcel.weight_kg) if parcel.weight_kg is not None else None,
         fee_ghs=float(parcel.fee_ghs),
+        declared_value_ghs=(
+            float(parcel.declared_value_ghs) if parcel.declared_value_ghs is not None else None
+        ),
         description=parcel.description,
         created_at=parcel.created_at,
+        loaded_at=parcel.loaded_at,
+        arrived_at=parcel.arrived_at,
+        collected_at=parcel.collected_at,
     )

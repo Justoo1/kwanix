@@ -31,7 +31,9 @@ export async function createParcel(
     destination_station_id: Number(formData.get("destination_station_id")),
     weight_kg: formData.get("weight_kg") ? Number(formData.get("weight_kg")) : null,
     fee_ghs: Number(formData.get("fee_ghs") ?? 0),
+    declared_value_ghs: formData.get("declared_value_ghs") ? Number(formData.get("declared_value_ghs")) : null,
     description: formData.get("description") || null,
+    idempotency_key: formData.get("idempotency_key") || undefined,
   };
 
   try {

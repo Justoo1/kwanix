@@ -21,7 +21,17 @@ export interface ParcelRow {
   fee_ghs: number;
   description: string | null;
   created_at: string | null;
+  loaded_at: string | null;
+  arrived_at: string | null;
+  collected_at: string | null;
   qr_code_base64?: string | null;
+}
+
+export interface ParcelsParams {
+  q?: string;
+  status?: ParcelStatus;
+  limit?: number;
+  offset?: number;
 }
 
 export interface DestinationMismatch {
@@ -35,18 +45,23 @@ export interface DestinationMismatch {
 
 export const parcelKeys = {
   all: ["parcels"] as const,
-  list: (status?: string) => ["parcels", "list", status ?? "all"] as const,
+  list: (params?: ParcelsParams) => ["parcels", "list", params ?? {}] as const,
   activeTrips: ["trips", "loading"] as const,
 };
 
 // ── Hooks ──────────────────────────────────────────────────────────────────────
 
-export function useParcels(status?: ParcelStatus) {
+export function useParcels(params: ParcelsParams = {}) {
   return useQuery({
-    queryKey: parcelKeys.list(status),
+    queryKey: parcelKeys.list(params),
     queryFn: () => {
-      const qs = status ? `?status=${status}` : "";
-      return clientFetch<ParcelRow[]>(`parcels${qs}`);
+      const qs = new URLSearchParams();
+      if (params.q) qs.set("q", params.q);
+      if (params.status) qs.set("status", params.status);
+      if (params.limit !== undefined) qs.set("limit", String(params.limit));
+      if (params.offset !== undefined) qs.set("offset", String(params.offset));
+      const qsStr = qs.toString();
+      return clientFetch<ParcelRow[]>(`parcels${qsStr ? "?" + qsStr : ""}`);
     },
   });
 }
@@ -95,6 +110,39 @@ export function useCollectParcel() {
       clientFetch<{ success: boolean; message: string }>("parcels/collect", {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: parcelKeys.all });
+    },
+  });
+}
+
+export interface BatchUnloadResponse {
+  succeeded: number[];
+  failed: { id: number; error: string }[];
+}
+
+export function useBatchUnload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (parcel_ids: number[]) =>
+      clientFetch<BatchUnloadResponse>("parcels/batch-unload", {
+        method: "POST",
+        body: JSON.stringify({ parcel_ids }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: parcelKeys.all });
+    },
+  });
+}
+
+export function useReturnParcel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ parcelId, reason }: { parcelId: number; reason?: string }) =>
+      clientFetch<ParcelRow>(`parcels/${parcelId}/return`, {
+        method: "PATCH",
+        body: JSON.stringify({ reason: reason ?? null }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: parcelKeys.all });

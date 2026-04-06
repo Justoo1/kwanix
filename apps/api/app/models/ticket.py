@@ -49,10 +49,14 @@ class Ticket(Base, TimestampMixin):
         Enum(PaymentStatus, name="paymentstatus"), default=PaymentStatus.pending, nullable=False
     )
     payment_ref: Mapped[str | None] = mapped_column(String(100))
+    passenger_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     source: Mapped[TicketSource] = mapped_column(
         Enum(TicketSource, name="ticketsource"), default=TicketSource.counter, nullable=False
     )
     booking_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

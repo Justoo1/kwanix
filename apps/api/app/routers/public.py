@@ -3,14 +3,15 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_db_public
 from app.integrations.paystack import initialize_transaction
+from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
 from app.models.trip import Trip, TripStatus
@@ -23,20 +24,17 @@ BOOKING_HOLD_MINUTES = 15
 # Statuses that represent an active (seat-occupying) ticket
 _ACTIVE_PAYMENT_CONDITIONS = [
     (Ticket.payment_status == PaymentStatus.paid),
-    (
-        (Ticket.payment_status == PaymentStatus.pending)
-        & (Ticket.booking_expires_at > func.now())
-    ),
+    ((Ticket.payment_status == PaymentStatus.pending) & (Ticket.booking_expires_at > func.now())),
 ]
 
 
 def _is_active_ticket():
     """SQLAlchemy condition: ticket is paid OR unexpired pending hold."""
     from sqlalchemy import or_
+
     return or_(
         Ticket.payment_status == PaymentStatus.paid,
-        (Ticket.payment_status == PaymentStatus.pending)
-        & (Ticket.booking_expires_at > func.now()),
+        (Ticket.payment_status == PaymentStatus.pending) & (Ticket.booking_expires_at > func.now()),
     )
 
 
@@ -61,8 +59,8 @@ class SeatMapResponse(BaseModel):
 
 
 class BookRequest(BaseModel):
-    passenger_name: str
-    passenger_phone: str
+    passenger_name: str = Field(..., max_length=100)
+    passenger_phone: str = Field(..., max_length=20)
     seat_number: int
     passenger_email: str | None = None
 
@@ -100,7 +98,9 @@ class PublicTicketResponse(BaseModel):
 
 
 @router.get("/trips", response_model=list[PublicTripResponse])
+@limiter.limit("100/minute")
 async def list_public_trips(
+    request: Request,
     from_station_id: int | None = None,
     to_station_id: int | None = None,
     date: str | None = None,
@@ -130,6 +130,7 @@ async def list_public_trips(
     if date is not None:
         try:
             from datetime import date as date_type
+
             day = date_type.fromisoformat(date)
         except ValueError as err:
             raise HTTPException(
@@ -173,7 +174,9 @@ async def list_public_trips(
 
 
 @router.get("/trips/{trip_id}/seats", response_model=SeatMapResponse)
+@limiter.limit("100/minute")
 async def get_seat_map(
+    request: Request,
     trip_id: int,
     db: AsyncSession = Depends(get_db_public),
 ):
@@ -202,7 +205,9 @@ async def get_seat_map(
     response_model=BookResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("10/minute")
 async def book_ticket(
+    request: Request,
     trip_id: int,
     body: BookRequest,
     db: AsyncSession = Depends(get_db_public),
@@ -257,6 +262,7 @@ async def book_ticket(
         trip_id=trip_id,
         passenger_name=body.passenger_name,
         passenger_phone=body.passenger_phone,
+        passenger_email=body.passenger_email,
         seat_number=body.seat_number,
         fare_ghs=trip.price_ticket_base,
         source=TicketSource.online,
@@ -305,9 +311,7 @@ async def get_public_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    company_result = await db.execute(
-        select(Company).where(Company.id == ticket.company_id)
-    )
+    company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
 
     return PublicTicketResponse(

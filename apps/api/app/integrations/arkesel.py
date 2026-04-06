@@ -74,6 +74,7 @@ async def dispatch_sms(
     recipient: str,
     message: str,
     event_type: str,
+    sms_opt_out: bool = False,
 ) -> None:
     """
     Sends an SMS via send_sms() then persists the outcome to sms_logs.
@@ -83,6 +84,10 @@ async def dispatch_sms(
     write rather than opening a second connection.
     """
     from app.models.sms_log import SmsLog  # local import avoids circular deps
+
+    if sms_opt_out:
+        logger.info("arkesel.dispatch_sms.skipped", reason="sms_opt_out", event_type=event_type)
+        return
 
     result = await send_sms(recipient, message, event_type)
 
@@ -138,4 +143,38 @@ def msg_parcel_arrived(station_name: str, otp_code: str, tracking_id: str) -> st
     return (
         f"Your parcel ({tracking_id}) has arrived at {station_name}. "
         f"Collection code: {otp_code}. Show this to the clerk. - RoutePass"
+    )
+
+
+def msg_parcel_returned(tracking_id: str) -> str:
+    return (
+        f"Your parcel ({tracking_id}) could not be delivered and has been returned to the sender. "
+        f"Please contact your station for more information. - RoutePass"
+    )
+
+
+def msg_parcel_return_sender(tracking_id: str, reason: str | None) -> str:
+    base = (
+        f"Your parcel ({tracking_id}) has been returned to the origin station. "
+        f"Please visit the station to arrange re-collection."
+    )
+    if reason:
+        base += f" Reason: {reason}."
+    return base + " - RoutePass"
+
+
+def msg_parcel_pickup_reminder(tracking_id: str, station_name: str) -> str:
+    return (
+        f"Reminder: your parcel ({tracking_id}) is waiting for collection at "
+        f"{station_name}. Please collect it at your earliest convenience. - RoutePass"
+    )
+
+
+def msg_trip_reminder(
+    passenger_name: str, from_station: str, to_station: str, departure_time: str
+) -> str:
+    first = passenger_name.split()[0] if passenger_name else "Passenger"
+    return (
+        f"Hi {first}, reminder: your trip from {from_station} to {to_station} departs at "
+        f"{departure_time}. Please arrive 30 minutes early. - RoutePass"
     )

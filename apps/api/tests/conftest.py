@@ -10,22 +10,34 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config import settings
 from app.database import Base
 from app.main import app
 from app.models.company import Company
 from app.models.station import Station
 from app.models.tracking_sequence import TrackingSequence
+from app.models.trip import TripStop  # noqa: F401 — ensures table is in Base.metadata
 from app.models.user import User, UserRole
 from app.models.vehicle import Vehicle
+from app.models.webhook_event import WebhookEvent  # noqa: F401 — ensures table is in Base.metadata
 from app.services.auth_service import create_access_token, hash_password
 
 # ── In-memory SQLite engine for integration tests ─────────────────────────────
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-TestSessionLocal = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False
-)
+TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture(autouse=True)
+def clear_external_api_keys(monkeypatch):
+    """
+    Prevent real HTTP calls to third-party services during tests.
+    The .env file may contain real keys; strip them here so SMS/payment
+    integrations always enter their 'skipped' / no-op branch.
+    """
+    monkeypatch.setattr(settings, "arkesel_api_key", "")
+    monkeypatch.setattr(settings, "paystack_secret_key", "")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -57,6 +69,7 @@ async def db() -> AsyncSession:
 
 
 # ── Seed helpers ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 async def company(db: AsyncSession) -> Company:
@@ -121,6 +134,7 @@ async def clerk_token(clerk_user: User) -> str:
 
 # ── FastAPI test client ───────────────────────────────────────────────────────
 
+
 @pytest.fixture
 async def client(db: AsyncSession) -> AsyncClient:
     """
@@ -136,9 +150,7 @@ async def client(db: AsyncSession) -> AsyncClient:
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_db_for_user] = _override_db
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()

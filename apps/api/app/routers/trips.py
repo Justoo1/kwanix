@@ -1,17 +1,21 @@
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
-from app.models.trip import Trip, TripStatus
+from app.integrations.email import send_manifest_email
+from app.models.company import Company
+from app.models.parcel import Parcel, ParcelStatus
+from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
+from app.models.vehicle import Vehicle
 from app.utils.pdf import generate_manifest_pdf
 
 router = APIRouter()
@@ -63,6 +67,7 @@ class TripResponse(BaseModel):
     departure_station_name: str | None = None
     destination_station_name: str | None = None
     parcel_count: int = 0
+    tickets_sold: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -99,6 +104,14 @@ class TripResponse(BaseModel):
             result["parcel_count"] = len(data.parcels)
         except Exception as exc:
             logger.debug("parcels not loaded on trip", trip_id=data.id, error=str(exc))
+        try:
+            from app.models.ticket import TicketStatus
+
+            result["tickets_sold"] = sum(
+                1 for t in data.tickets if t.status != TicketStatus.cancelled
+            )
+        except Exception as exc:
+            logger.debug("tickets not loaded on trip", trip_id=data.id, error=str(exc))
         return result
 
 
@@ -110,13 +123,28 @@ class ToggleBookingRequest(BaseModel):
     booking_open: bool
 
 
+class TripStopRequest(BaseModel):
+    station_id: int
+    sequence_order: int
+    eta: datetime | None = None
+
+
+class TripStopResponse(BaseModel):
+    id: int
+    trip_id: int
+    station_id: int
+    sequence_order: int
+    eta: datetime | None
+    station_name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
 async def _get_trip_or_404(trip_id: int, db: AsyncSession) -> Trip:
-    result = await db.execute(
-        select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS)
-    )
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS))
     trip = result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -137,6 +165,19 @@ async def create_trip(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
+    vehicle_result = await db.execute(select(Vehicle).where(Vehicle.id == body.vehicle_id))
+    vehicle = vehicle_result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if not vehicle.is_available:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "VEHICLE_UNAVAILABLE",
+                "message": "Vehicle is marked as unavailable for service.",
+            },
+        )
+
     trip = Trip(
         company_id=current_user.company_id,
         vehicle_id=body.vehicle_id,
@@ -149,10 +190,65 @@ async def create_trip(
     db.add(trip)
     await db.commit()
 
-    result = await db.execute(
-        select(Trip).where(Trip.id == trip.id).options(*_TRIP_OPTS)
-    )
+    result = await db.execute(select(Trip).where(Trip.id == trip.id).options(*_TRIP_OPTS))
     return result.scalar_one()
+
+
+class GenerateScheduleRequest(BaseModel):
+    vehicle_id: int
+    departure_station_id: int
+    destination_station_id: int
+    departure_time: str  # HH:MM
+    days_ahead: int = Field(..., ge=1, le=30)
+    base_fare_ghs: float | None = None
+
+
+class GenerateScheduleResponse(BaseModel):
+    trip_ids: list[int]
+    created: int
+
+
+@router.post(
+    "/generate-schedule",
+    response_model=GenerateScheduleResponse,
+    status_code=201,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def generate_schedule(
+    body: GenerateScheduleRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Create one trip per day for the next N days at the given departure time."""
+    try:
+        hour, minute = (int(x) for x in body.departure_time.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError
+    except (ValueError, AttributeError) as exc:
+        raise HTTPException(
+            status_code=400, detail="departure_time must be a valid HH:MM string"
+        ) from exc
+
+    today = datetime.now(UTC).date()
+    trip_ids: list[int] = []
+
+    for i in range(body.days_ahead):
+        day: date = today + timedelta(days=i + 1)
+        dt = datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC)
+        trip = Trip(
+            company_id=current_user.company_id,
+            vehicle_id=body.vehicle_id,
+            departure_station_id=body.departure_station_id,
+            destination_station_id=body.destination_station_id,
+            departure_time=dt,
+            price_ticket_base=body.base_fare_ghs,
+        )
+        db.add(trip)
+        await db.flush()
+        trip_ids.append(trip.id)
+
+    await db.commit()
+    return GenerateScheduleResponse(trip_ids=trip_ids, created=len(trip_ids))
 
 
 @router.get("", response_model=list[TripResponse])
@@ -191,13 +287,70 @@ async def get_trip_manifest(
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    pdf_bytes = generate_manifest_pdf(trip)
+    company_result = await db.execute(select(Company).where(Company.id == trip.company_id))
+    company = company_result.scalar_one_or_none()
+    pdf_bytes = generate_manifest_pdf(
+        trip,
+        company_name=company.name if company else None,
+        brand_color=company.brand_color if company else None,
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="manifest-trip-{trip_id}.pdf"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="manifest-trip-{trip_id}.pdf"'},
+    )
+
+
+@router.get(
+    "/{trip_id}/manifest.csv",
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def get_trip_manifest_csv(
+    trip_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Stream a CSV passenger manifest for the trip."""
+    import csv
+    import io
+
+    from app.models.ticket import Ticket, TicketStatus
+
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    if trip_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    tickets_result = await db.execute(
+        select(Ticket)
+        .where(
+            Ticket.trip_id == trip_id,
+            Ticket.status != TicketStatus.cancelled,
+        )
+        .order_by(Ticket.seat_number)
+    )
+    tickets = tickets_result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        ["seat_number", "passenger_name", "passenger_phone", "payment_status", "source"]
+    )
+    for t in tickets:
+        writer.writerow(
+            [
+                t.seat_number,
+                t.passenger_name,
+                t.passenger_phone,
+                t.payment_status.value,
+                t.source.value,
+            ]
+        )
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="manifest-trip-{trip_id}.csv"'},
     )
 
 
@@ -228,18 +381,94 @@ async def update_trip_status(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Cannot transition from '{trip.status}' to '{body.status}'. "
-                f"Allowed: {allowed}"
+                f"Cannot transition from '{trip.status}' to '{body.status}'. Allowed: {allowed}"
             ),
         )
+
+    if body.status == TripStatus.departed:
+        result = await db.execute(
+            select(Parcel).where(
+                Parcel.current_trip_id == trip.id,
+                Parcel.status == ParcelStatus.pending,
+            )
+        )
+        pending_parcels = result.scalars().all()
+        if pending_parcels:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "PARCELS_NOT_LOADED", "count": len(pending_parcels)},
+            )
 
     trip.status = body.status
     await db.commit()
 
-    result = await db.execute(
-        select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS)
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS))
+    updated_trip = result.scalar_one()
+
+    if body.status == TripStatus.departed:
+        try:
+            company_result = await db.execute(
+                select(Company).where(Company.id == updated_trip.company_id)
+            )
+            company = company_result.scalar_one_or_none()
+            pdf_bytes = generate_manifest_pdf(
+                updated_trip,
+                company_name=company.name if company else None,
+                brand_color=company.brand_color if company else None,
+            )
+            send_manifest_email(trip_id, pdf_bytes)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("manifest email step failed", trip_id=trip_id, error=str(exc))
+
+    return updated_trip
+
+
+class TripRevenueResponse(BaseModel):
+    total_revenue_ghs: float
+    ticket_count: int
+    avg_fare_ghs: float
+    paid_count: int
+    pending_count: int
+
+
+@router.get(
+    "/{trip_id}/revenue",
+    response_model=TripRevenueResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def get_trip_revenue(
+    trip_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Return revenue summary for a trip (non-cancelled tickets only)."""
+    from app.models.ticket import PaymentStatus, Ticket, TicketStatus
+
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    if trip_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    tickets_result = await db.execute(
+        select(Ticket).where(
+            Ticket.trip_id == trip_id,
+            Ticket.status != TicketStatus.cancelled,
+        )
     )
-    return result.scalar_one()
+    tickets = tickets_result.scalars().all()
+
+    ticket_count = len(tickets)
+    total_revenue = sum(float(t.fare_ghs) for t in tickets)
+    avg_fare = total_revenue / ticket_count if ticket_count else 0.0
+    paid_count = sum(1 for t in tickets if t.payment_status == PaymentStatus.paid)
+    pending_count = sum(1 for t in tickets if t.payment_status == PaymentStatus.pending)
+
+    return TripRevenueResponse(
+        total_revenue_ghs=round(total_revenue, 2),
+        ticket_count=ticket_count,
+        avg_fare_ghs=round(avg_fare, 2),
+        paid_count=paid_count,
+        pending_count=pending_count,
+    )
 
 
 @router.patch(
@@ -261,7 +490,76 @@ async def toggle_booking(
         )
     trip.booking_open = body.booking_open
     await db.commit()
-    result = await db.execute(
-        select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS)
-    )
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS))
     return result.scalar_one()
+
+
+@router.get(
+    "/{trip_id}/stops",
+    response_model=list[TripStopResponse],
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def list_trip_stops(
+    trip_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Return ordered stops for a trip."""
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    if trip_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    result = await db.execute(
+        select(TripStop)
+        .where(TripStop.trip_id == trip_id)
+        .options(selectinload(TripStop.station))
+        .order_by(TripStop.sequence_order)
+    )
+    stops = result.scalars().all()
+    return [
+        TripStopResponse(
+            id=s.id,
+            trip_id=s.trip_id,
+            station_id=s.station_id,
+            sequence_order=s.sequence_order,
+            eta=s.eta,
+            station_name=s.station.name if s.station else None,
+        )
+        for s in stops
+    ]
+
+
+@router.post(
+    "/{trip_id}/stops",
+    response_model=TripStopResponse,
+    status_code=201,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def add_trip_stop(
+    trip_id: int,
+    body: TripStopRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Add an intermediate stop to a trip."""
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    if trip_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    stop = TripStop(
+        trip_id=trip_id,
+        station_id=body.station_id,
+        sequence_order=body.sequence_order,
+        eta=body.eta,
+    )
+    db.add(stop)
+    await db.commit()
+    await db.refresh(stop, ["station"])
+    return TripStopResponse(
+        id=stop.id,
+        trip_id=stop.trip_id,
+        station_id=stop.station_id,
+        sequence_order=stop.sequence_order,
+        eta=stop.eta,
+        station_name=stop.station.name if stop.station else None,
+    )

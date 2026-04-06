@@ -51,7 +51,7 @@ export async function login(
     return { message: "Invalid phone/email or password." };
   }
 
-  const { access_token } = (await tokenRes.json()) as LoginResponse;
+  const { access_token, refresh_token } = (await tokenRes.json()) as LoginResponse;
 
   // Fetch the user profile to store in session
   const meRes = await fetch(`${API_BASE}/api/v1/auth/me`, {
@@ -64,7 +64,7 @@ export async function login(
 
   const user = (await meRes.json()) as SessionUser;
 
-  await createSession({ accessToken: access_token, user });
+  await createSession({ accessToken: access_token, refreshToken: refresh_token, user });
 
   redirect("/dashboard");
 }

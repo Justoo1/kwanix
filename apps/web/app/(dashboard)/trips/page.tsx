@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api"
 import { getSession } from "@/lib/session"
 import type { TripResponse } from "@/lib/definitions"
 import ScheduleTripModal from "./schedule-trip-modal"
+import RecurringScheduleModal from "./recurring-schedule-modal"
 
 export const metadata: Metadata = { title: "Trips — RoutePass" }
 
@@ -80,7 +81,12 @@ export default async function TripsPage({
             Schedule and track transport operations
           </p>
         </div>
-        {canCreate && <ScheduleTripModal />}
+        {canCreate && (
+          <div className="flex items-center gap-2">
+            <RecurringScheduleModal />
+            <ScheduleTripModal />
+          </div>
+        )}
       </div>
 
       {/* Filter tabs */}
@@ -239,7 +245,9 @@ function TripRow({ trip, muted }: { trip: TripResponse; muted: boolean }) {
         </p>
         <p className="text-xs text-zinc-400 mt-0.5">
           {trip.vehicle_plate}
-          {trip.vehicle_capacity ? ` · ${trip.vehicle_capacity} seats` : ""}
+          {trip.vehicle_capacity
+            ? ` · ${trip.tickets_sold ?? 0}/${trip.vehicle_capacity} seats`
+            : ""}
           {" · "}
           {new Date(trip.departure_time).toLocaleString("en-GH", {
             dateStyle: "medium",

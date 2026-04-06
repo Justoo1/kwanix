@@ -8,10 +8,20 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Printer, CheckCheck, AlertCircle, ExternalLink, Copy, Check } from "lucide-react";
-import { type ParcelRow } from "@/hooks/use-parcels";
+import { Printer, CheckCheck, AlertCircle, ExternalLink, Copy, Check, RotateCcw, Eye } from "lucide-react";
+import { type ParcelRow, useReturnParcel } from "@/hooks/use-parcels";
+import type { UserRole } from "@/lib/definitions";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import ParcelPrint from "./parcel-print";
 import { markPrinted, getPrintedIds } from "@/lib/print-tracker";
+import ParcelDetailDrawer from "./parcel-detail-drawer";
 
 function TrackingCell({ trackingNumber }: { trackingNumber: string }) {
   const [copied, setCopied] = useState(false);
@@ -69,6 +79,7 @@ const STATUS_STYLES: Record<string, string> = {
   in_transit: "bg-blue-100 text-blue-800",
   arrived: "bg-purple-100 text-purple-800",
   picked_up: "bg-green-100 text-green-800",
+  returned: "bg-zinc-100 text-zinc-600",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -76,11 +87,72 @@ const STATUS_LABELS: Record<string, string> = {
   in_transit: "In Transit",
   arrived: "Arrived",
   picked_up: "Picked Up",
+  returned: "Returned",
 };
+
+function ReturnDialog({
+  parcel,
+  onClose,
+}: {
+  parcel: ParcelRow;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const returnMutation = useReturnParcel();
+
+  function handleConfirm() {
+    returnMutation.mutate(
+      { parcelId: parcel.id, reason: reason.trim() || undefined },
+      { onSuccess: onClose, onError: onClose }
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mark parcel as returned?</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-zinc-600">
+            This will mark <span className="font-mono font-semibold">{parcel.tracking_number}</span> as returned and notify the sender via SMS.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 mb-1">
+              Reason (optional)
+            </label>
+            <input
+              type="text"
+              maxLength={200}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Receiver not available"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={returnMutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={returnMutation.isPending}
+          >
+            {returnMutation.isPending ? "Returning…" : "Confirm return"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function buildColumns(
   setPrintTarget: (row: ParcelRow) => void,
-  printedIds: Set<number>
+  printedIds: Set<number>,
+  setReturnTarget: (row: ParcelRow) => void,
+  setDetailTarget: (row: ParcelRow) => void
 ) {
   const col = createColumnHelper<ParcelRow>();
 
@@ -182,6 +254,37 @@ function buildColumns(
         );
       },
     }),
+    col.display({
+      id: "return",
+      header: "",
+      cell: ({ row }) => {
+        if (row.original.status !== "arrived") return null;
+        return (
+          <button
+            onClick={() => setReturnTarget(row.original)}
+            title="Mark as returned"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Return
+          </button>
+        );
+      },
+    }),
+    col.display({
+      id: "details",
+      header: "",
+      cell: ({ row }) => (
+        <button
+          onClick={() => setDetailTarget(row.original)}
+          title="View details"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          Details
+        </button>
+      ),
+    }),
   ];
 }
 
@@ -221,14 +324,18 @@ export default function ParcelTable({
   data: parcels,
   isLoading = false,
   isError = false,
+  userRole,
 }: {
   data: ParcelRow[];
   isLoading?: boolean;
   isError?: boolean;
+  userRole: UserRole;
 }) {
   "use no memo";
   const [printTarget, setPrintTarget] = useState<ParcelRow | null>(null);
   const [printedIds, setPrintedIds] = useState<Set<number>>(new Set());
+  const [returnTarget, setReturnTarget] = useState<ParcelRow | null>(null);
+  const [detailTarget, setDetailTarget] = useState<ParcelRow | null>(null);
 
   useEffect(() => {
     setPrintedIds(new Set(getPrintedIds()));
@@ -239,7 +346,7 @@ export default function ParcelTable({
     setPrintedIds(new Set(getPrintedIds()));
   }, []);
 
-  const columns = buildColumns(setPrintTarget, printedIds);
+  const columns = buildColumns(setPrintTarget, printedIds, setReturnTarget, setDetailTarget);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -307,6 +414,16 @@ export default function ParcelTable({
       {printTarget && (
         <PrintTrigger parcel={printTarget} onDone={handlePrintDone} />
       )}
+
+      {returnTarget && (
+        <ReturnDialog parcel={returnTarget} onClose={() => setReturnTarget(null)} />
+      )}
+
+      <ParcelDetailDrawer
+        parcel={detailTarget}
+        userRole={userRole}
+        onClose={() => setDetailTarget(null)}
+      />
     </>
   );
 }

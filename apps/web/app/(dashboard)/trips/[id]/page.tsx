@@ -8,6 +8,9 @@ import {
   Monitor,
   ShoppingBag,
   CalendarDays,
+  DollarSign,
+  CheckCircle2,
+  Clock,
 } from "lucide-react"
 
 import { apiFetch } from "@/lib/api"
@@ -16,6 +19,23 @@ import type { TicketResponse } from "@/lib/definitions"
 import StatusForm from "./status-form"
 import BookingToggle from "./booking-toggle"
 import ManifestDownloadButton from "./manifest-download-button"
+import ManifestCsvButton from "./manifest-csv-button"
+
+interface TripRevenue {
+  total_revenue_ghs: number
+  ticket_count: number
+  avg_fare_ghs: number
+  paid_count: number
+  pending_count: number
+}
+
+interface TripStop {
+  id: number
+  station_id: number
+  sequence_order: number
+  eta: string | null
+  station_name: string | null
+}
 
 interface TripDetail {
   id: number
@@ -68,11 +88,13 @@ export default async function TripDetailPage({
   const { id } = await params
   const session = await getSession()
 
-  const [trip, tickets] = await Promise.all([
+  const [trip, tickets, revenue, stops] = await Promise.all([
     apiFetch<TripDetail>(`/api/v1/trips/${id}`).catch(() => null),
     apiFetch<TicketResponse[]>(`/api/v1/tickets?trip_id=${id}`).catch(
       () => [] as TicketResponse[]
     ),
+    apiFetch<TripRevenue>(`/api/v1/trips/${id}/revenue`).catch(() => null),
+    apiFetch<TripStop[]>(`/api/v1/trips/${id}/stops`).catch(() => [] as TripStop[]),
   ])
 
   if (!trip) notFound()
@@ -84,7 +106,6 @@ export default async function TripDetailPage({
   const counterCount = tickets.filter(
     (t) => !t.source || t.source === "counter"
   ).length
-  const totalRevenue = tickets.reduce((sum, t) => sum + Number(t.fare_ghs), 0)
   const occupancyPct =
     trip.vehicle_capacity && trip.vehicle_capacity > 0
       ? Math.round((tickets.length / trip.vehicle_capacity) * 100)
@@ -118,8 +139,11 @@ export default async function TripDetailPage({
           </div>
         </div>
 
-        {/* Manifest download — prominent primary action */}
-        <ManifestDownloadButton tripId={trip.id} />
+        {/* Manifest downloads */}
+        <div className="flex items-center gap-2">
+          <ManifestDownloadButton tripId={trip.id} />
+          <ManifestCsvButton tripId={trip.id} />
+        </div>
       </div>
 
       {/* ── Route + vehicle info card ───────────────────────────────────── */}
@@ -183,15 +207,41 @@ export default async function TripDetailPage({
           />
         </div>
 
-        {/* Revenue highlight (only if tickets exist) */}
-        {tickets.length > 0 && (
-          <div className="bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 flex items-center justify-between">
-            <span className="text-sm text-emerald-700 font-medium">
-              Total ticket revenue
-            </span>
-            <span className="text-lg font-bold text-emerald-800">
-              GHS {totalRevenue.toFixed(2)}
-            </span>
+        {/* Revenue card */}
+        {revenue && (
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-5 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <DollarSign className="size-4 text-emerald-600" />
+              <span className="text-sm font-semibold text-emerald-800">Revenue Summary</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-emerald-600 mb-0.5">Total</p>
+                <p className="text-xl font-bold text-emerald-900">
+                  GHS {revenue.total_revenue_ghs.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-emerald-600 mb-0.5">Avg fare</p>
+                <p className="text-xl font-bold text-emerald-900">
+                  GHS {revenue.avg_fare_ghs.toFixed(2)}
+                </p>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <CheckCircle2 className="size-3.5 text-emerald-500 mt-1 shrink-0" />
+                <div>
+                  <p className="text-xs text-emerald-600 mb-0.5">Paid</p>
+                  <p className="text-xl font-bold text-emerald-900">{revenue.paid_count}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <Clock className="size-3.5 text-amber-500 mt-1 shrink-0" />
+                <div>
+                  <p className="text-xs text-zinc-500 mb-0.5">Pending</p>
+                  <p className="text-xl font-bold text-zinc-700">{revenue.pending_count}</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -212,6 +262,43 @@ export default async function TripDetailPage({
             Update status
           </h2>
           <StatusForm tripId={trip.id} currentStatus={trip.status} />
+        </div>
+      )}
+
+      {/* ── Trip stops ─────────────────────────────────────────────────── */}
+      {canManage && (
+        <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-zinc-100">
+            <h2 className="text-base font-medium text-zinc-800">
+              Route Stops
+              <span className="ml-2 text-sm font-normal text-zinc-400">
+                ({stops.length})
+              </span>
+            </h2>
+          </div>
+          {stops.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-sm text-zinc-400">No intermediate stops defined.</p>
+            </div>
+          ) : (
+            <ol className="divide-y divide-zinc-100">
+              {stops.map((stop) => (
+                <li key={stop.id} className="flex items-center gap-4 px-6 py-3">
+                  <span className="shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
+                    {stop.sequence_order}
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-zinc-800">
+                    {stop.station_name ?? `Station #${stop.station_id}`}
+                  </span>
+                  {stop.eta && (
+                    <span className="text-xs text-zinc-400">
+                      ETA {new Date(stop.eta).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
 

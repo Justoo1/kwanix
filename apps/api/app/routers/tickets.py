@@ -2,19 +2,21 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
-from sqlalchemy import select, update
+from fastapi.responses import Response
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
 from app.integrations.arkesel import send_sms
-from app.integrations.paystack import initialize_transaction
+from app.integrations.paystack import initialize_transaction, refund_transaction
 from app.models.company import Company
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
+from app.services.qr_service import generate_qr_png_bytes
 from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()
@@ -22,8 +24,8 @@ router = APIRouter()
 
 class CreateTicketRequest(BaseModel):
     trip_id: int
-    passenger_name: str
-    passenger_phone: str
+    passenger_name: str = Field(..., max_length=100)
+    passenger_phone: str = Field(..., max_length=20)
     seat_number: int
     fare_ghs: float
 
@@ -52,6 +54,7 @@ class TicketResponse(BaseModel):
 
 class TicketDetailResponse(TicketResponse):
     """Enriched response used by the print/detail view."""
+
     company_name: str | None = None
     brand_color: str | None = None
     departure_station: str | None = None
@@ -80,7 +83,9 @@ async def create_ticket(
     current_user: User = Depends(get_current_user),
 ):
     # Validate trip exists and is accepting passengers
-    trip_result = await db.execute(select(Trip).where(Trip.id == body.trip_id))
+    trip_result = await db.execute(
+        select(Trip).where(Trip.id == body.trip_id).options(selectinload(Trip.vehicle))
+    )
     trip = trip_result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -88,6 +93,20 @@ async def create_ticket(
         raise HTTPException(
             status_code=400,
             detail=f"Trip is not accepting passengers (status: {trip.status.value})",
+        )
+
+    # Check vehicle capacity — count non-cancelled tickets
+    count_result = await db.execute(
+        select(func.count(Ticket.id)).where(
+            Ticket.trip_id == body.trip_id,
+            Ticket.status != TicketStatus.cancelled,
+        )
+    )
+    ticket_count = count_result.scalar() or 0
+    if ticket_count >= trip.vehicle.capacity:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "TRIP_FULL", "available": 0},
         )
 
     # Cancel any expired online holds for this seat before checking availability
@@ -128,7 +147,7 @@ async def create_ticket(
         seat_number=body.seat_number,
         fare_ghs=body.fare_ghs,
         source=TicketSource.counter,
-        payment_status=PaymentStatus.paid,  # counter = cash already received
+        payment_status=PaymentStatus.pending,
     )
     db.add(ticket)
     await db.commit()
@@ -211,9 +230,7 @@ async def get_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Fetch company for brand_color
-    company_result = await db.execute(
-        select(Company).where(Company.id == ticket.company_id)
-    )
+    company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
 
     detail = TicketDetailResponse(
@@ -233,6 +250,69 @@ async def get_ticket(
         vehicle_plate=ticket.trip.vehicle.plate_number if ticket.trip else None,
     )
     return detail
+
+
+@router.patch(
+    "/{ticket_id}/cancel",
+    response_model=TicketResponse,
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_clerk,
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def cancel_ticket(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Cancel a ticket. If payment_status=paid, initiates a Paystack refund."""
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.status == TicketStatus.cancelled:
+        raise HTTPException(status_code=400, detail="Ticket is already cancelled")
+
+    ticket.status = TicketStatus.cancelled
+
+    if ticket.payment_status == PaymentStatus.paid and ticket.payment_ref:
+        amount_kobo = int(float(ticket.fare_ghs) * 100)
+        await refund_transaction(ticket.payment_ref, amount_kobo)
+        ticket.payment_status = PaymentStatus.refunded
+
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+
+@router.get("/{ticket_id}/qr")
+async def get_ticket_qr(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """Return a PNG QR code image for the given ticket (encodes TICKET:{id}:{trip_id}:{seat})."""
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    payload = f"TICKET:{ticket.id}:{ticket.trip_id}:{ticket.seat_number}"
+    png_bytes = generate_qr_png_bytes(payload)
+    return Response(content=png_bytes, media_type="image/png")
 
 
 class ShareTicketRequest(BaseModel):
@@ -261,9 +341,7 @@ async def share_ticket(
 ):
     """Send the passenger a link to view and download their ticket."""
     result = await db.execute(
-        select(Ticket)
-        .where(Ticket.id == ticket_id)
-        .options(selectinload(Ticket.trip))
+        select(Ticket).where(Ticket.id == ticket_id).options(selectinload(Ticket.trip))
     )
     ticket = result.scalar_one_or_none()
     if ticket is None:

@@ -6,6 +6,7 @@ import {
   UserCheck,
   AlertCircle,
   ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -17,6 +18,7 @@ interface PublicParcelStatus {
   destination: string;
   bus_plate: string | null;
   last_updated: string;
+  return_reason: string | null;
 }
 
 export async function generateMetadata({
@@ -240,6 +242,21 @@ function TrackCard({ parcel }: { parcel: PublicParcelStatus }) {
           </div>
         </div>
       </div>
+
+      {/* Return reason callout */}
+      {parcel.status === "returned" && (
+        <div className="mx-6 mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 flex items-start gap-3">
+          <RotateCcw className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-0.5">
+              Returned to Sender
+            </p>
+            <p className="text-sm text-red-300">
+              {parcel.return_reason ?? "This parcel has been returned."}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Footer: last updated */}
       <div className="px-6 pb-5">

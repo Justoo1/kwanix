@@ -66,65 +66,67 @@ export default async function TicketsPage() {
             No tickets issued yet.
           </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">#</th>
-                <th className="px-6 py-3 text-left font-medium">Passenger</th>
-                <th className="px-6 py-3 text-left font-medium">Trip</th>
-                <th className="px-6 py-3 text-left font-medium">Seat</th>
-                <th className="px-6 py-3 text-left font-medium">Fare</th>
-                <th className="px-6 py-3 text-left font-medium">Payment</th>
-                <th className="px-6 py-3 text-left font-medium">Source</th>
-                <th className="px-6 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {recentTickets.map((t) => (
-                <tr key={t.id} className="hover:bg-zinc-50">
-                  <td className="px-6 py-4 font-mono text-zinc-500">{t.id}</td>
-                  <td className="px-6 py-4">
-                    <p className="font-medium text-zinc-900">{t.passenger_name}</p>
-                    <p className="text-xs text-zinc-400">{t.passenger_phone}</p>
-                  </td>
-                  <td className="px-6 py-4 text-zinc-600">#{t.trip_id}</td>
-                  <td className="px-6 py-4 font-mono text-zinc-700">{t.seat_number}</td>
-                  <td className="px-6 py-4 text-zinc-700">
-                    GHS {Number(t.fare_ghs).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        PAYMENT_STYLES[t.payment_status] ??
-                        "bg-zinc-100 text-zinc-600"
-                      }`}
-                    >
-                      {t.payment_status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        t.source === "online"
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-zinc-100 text-zinc-500"
-                      }`}
-                    >
-                      {t.source ?? "counter"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Link
-                      href={`/tickets/${t.id}`}
-                      className="text-xs text-blue-600 hover:underline"
-                    >
-                      View
-                    </Link>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="px-6 py-3 text-left font-medium">#</th>
+                  <th className="px-6 py-3 text-left font-medium">Passenger</th>
+                  <th className="px-6 py-3 text-left font-medium">Trip</th>
+                  <th className="px-6 py-3 text-left font-medium">Seat</th>
+                  <th className="px-6 py-3 text-left font-medium">Fare</th>
+                  <th className="px-6 py-3 text-left font-medium">Payment</th>
+                  <th className="px-6 py-3 text-left font-medium">Source</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {recentTickets.map((t) => (
+                  <tr key={t.id} className="hover:bg-zinc-50">
+                    <td className="px-6 py-4 font-mono text-zinc-500">{t.id}</td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-zinc-900">{t.passenger_name}</p>
+                      <p className="text-xs text-zinc-400">{t.passenger_phone}</p>
+                    </td>
+                    <td className="px-6 py-4 text-zinc-600">#{t.trip_id}</td>
+                    <td className="px-6 py-4 font-mono text-zinc-700">{t.seat_number}</td>
+                    <td className="px-6 py-4 text-zinc-700">
+                      GHS {Number(t.fare_ghs).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          PAYMENT_STYLES[t.payment_status] ??
+                          "bg-zinc-100 text-zinc-600"
+                        }`}
+                      >
+                        {t.payment_status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          t.source === "online"
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-zinc-100 text-zinc-500"
+                        }`}
+                      >
+                        {t.source ?? "counter"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Link
+                        href={`/tickets/${t.id}`}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

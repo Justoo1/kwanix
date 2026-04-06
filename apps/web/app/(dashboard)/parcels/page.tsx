@@ -3,6 +3,8 @@ import { Package, ScanLine } from "lucide-react";
 import Link from "next/link";
 
 import { apiFetch } from "@/lib/api";
+import { getSession } from "@/lib/session";
+import type { UserRole } from "@/lib/definitions";
 import ParcelsClient from "./parcels-client";
 
 export const metadata: Metadata = { title: "Parcels — RoutePass" };
@@ -14,9 +16,12 @@ interface StationOption {
 }
 
 export default async function ParcelsPage() {
-  const stations = await apiFetch<StationOption[]>("/api/v1/stations").catch(
-    () => [] as StationOption[]
-  );
+  const [stations, session] = await Promise.all([
+    apiFetch<StationOption[]>("/api/v1/stations").catch(() => [] as StationOption[]),
+    getSession(),
+  ]);
+  const userRole: UserRole = session?.user.role ?? "station_clerk";
+  const stationId: number | null = session?.user.station_id ?? null;
 
   return (
     <div className="space-y-6">
@@ -36,7 +41,7 @@ export default async function ParcelsPage() {
       </div>
 
       {/* Client section: create modal + pending queue + full table */}
-      <ParcelsClient stations={stations} />
+      <ParcelsClient stations={stations} userRole={userRole} stationId={stationId} />
     </div>
   );
 }

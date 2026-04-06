@@ -13,6 +13,7 @@ const ALLOWED_ROLES = [
   "station_clerk",
 ];
 const CREATE_ROLES = ["company_admin", "super_admin"];
+const MANAGE_ROLES = ["company_admin", "super_admin", "station_manager"];
 
 export default async function VehiclesPage() {
   const session = await getSession();
@@ -22,5 +23,10 @@ export default async function VehiclesPage() {
     redirect("/dashboard");
   }
 
-  return <VehiclesView canCreate={CREATE_ROLES.includes(role)} />;
+  return (
+    <VehiclesView
+      canCreate={CREATE_ROLES.includes(role)}
+      canManage={MANAGE_ROLES.includes(role)}
+    />
+  );
 }

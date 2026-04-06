@@ -7,6 +7,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 
+class TripStop(Base):
+    """Ordered intermediate/final stops for a trip."""
+
+    __tablename__ = "trip_stops"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
+    )
+    station_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("stations.id", ondelete="RESTRICT"), nullable=False
+    )
+    sequence_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    trip: Mapped["Trip"] = relationship(back_populates="stops")
+    station: Mapped["Station"] = relationship()  # noqa: F821
+
+
 class TripStatus(enum.StrEnum):
     scheduled = "scheduled"
     loading = "loading"
@@ -52,3 +72,6 @@ class Trip(Base, TimestampMixin):
     )
     parcels: Mapped[list["Parcel"]] = relationship(back_populates="current_trip")  # noqa: F821
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="trip")  # noqa: F821
+    stops: Mapped[list["TripStop"]] = relationship(  # noqa: F821
+        back_populates="trip", order_by="TripStop.sequence_order"
+    )

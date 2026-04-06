@@ -5,12 +5,8 @@ import qrcode
 from qrcode.image.pil import PilImage
 
 
-def generate_qr_base64(data: str, box_size: int = 10, border: int = 4) -> str:
-    """
-    Generates a QR code for the given data string.
-    Returns a base64-encoded PNG string suitable for embedding in JSON responses
-    or <img src="data:image/png;base64,..."> tags.
-    """
+def generate_qr_png_bytes(data: str, box_size: int = 10, border: int = 4) -> bytes:
+    """Generate a QR code for the given data string. Returns raw PNG bytes."""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -24,6 +20,13 @@ def generate_qr_base64(data: str, box_size: int = 10, border: int = 4) -> str:
 
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
-    buffer.seek(0)
+    return buffer.getvalue()
 
-    return base64.b64encode(buffer.read()).decode("utf-8")
+
+def generate_qr_base64(data: str, box_size: int = 10, border: int = 4) -> str:
+    """
+    Generates a QR code for the given data string.
+    Returns a base64-encoded PNG string suitable for embedding in JSON responses
+    or <img src="data:image/png;base64,..."> tags.
+    """
+    return base64.b64encode(generate_qr_png_bytes(data, box_size, border)).decode("utf-8")
