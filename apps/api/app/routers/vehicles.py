@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,10 +78,14 @@ async def create_vehicle(
 
 @router.get("", response_model=list[VehicleResponse])
 async def list_vehicles(
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Vehicle).where(Vehicle.is_active == True))  # noqa: E712
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.is_active == True).limit(limit).offset(offset)  # noqa: E712
+    )
     return result.scalars().all()
 
 

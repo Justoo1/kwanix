@@ -6,7 +6,10 @@ import { z } from "zod";
 import { createSession, deleteSession } from "@/lib/session";
 import type { LoginResponse, SessionUser } from "@/lib/definitions";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 const LoginSchema = z.object({
   username: z.string().min(1, "Phone or email is required"),

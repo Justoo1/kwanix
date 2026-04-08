@@ -4,7 +4,13 @@ import { redirect } from "next/navigation";
 
 import { createSession, deleteSession, getSession } from "@/lib/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Server-side: prefer API_INTERNAL_URL (Docker service name) so requests stay
+// on the internal network. Falls back to NEXT_PUBLIC_API_URL for local dev
+// without Docker, or plain localhost as last resort.
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 /**
  * Authenticated fetch wrapper for Server Components and Server Actions.

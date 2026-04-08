@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
@@ -61,18 +61,21 @@ class TicketDetailResponse(TicketResponse):
     destination_station: str | None = None
     departure_time: str | None = None
     vehicle_plate: str | None = None
+    refund_ref: str | None = None
 
 
 @router.get("", response_model=list[TicketResponse])
 async def list_tickets(
     trip_id: int | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
     q = select(Ticket).order_by(Ticket.id.desc())
     if trip_id is not None:
         q = q.where(Ticket.trip_id == trip_id)
-    result = await db.execute(q)
+    result = await db.execute(q.limit(limit).offset(offset))
     return result.scalars().all()
 
 
@@ -248,6 +251,7 @@ async def get_ticket(
         destination_station=ticket.trip.destination_station.name if ticket.trip else None,
         departure_time=ticket.trip.departure_time.isoformat() if ticket.trip else None,
         vehicle_plate=ticket.trip.vehicle.plate_number if ticket.trip else None,
+        refund_ref=ticket.refund_ref,
     )
     return detail
 
@@ -291,6 +295,90 @@ async def cancel_ticket(
     return ticket
 
 
+class BatchCancelRequest(BaseModel):
+    ticket_ids: list[int] = Field(..., min_length=1)
+
+
+class BatchCancelResponse(BaseModel):
+    succeeded: list[int]
+    failed: list[int]
+
+
+@router.post(
+    "/batch-cancel",
+    response_model=BatchCancelResponse,
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def batch_cancel_tickets(
+    body: BatchCancelRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Cancel multiple tickets by ID. Initiates Paystack refund for paid tickets."""
+    succeeded: list[int] = []
+    failed: list[int] = []
+
+    for ticket_id in body.ticket_ids:
+        try:
+            result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = result.scalar_one_or_none()
+            if ticket is None or ticket.status == TicketStatus.cancelled:
+                failed.append(ticket_id)
+                continue
+            ticket.status = TicketStatus.cancelled
+            if ticket.payment_status == PaymentStatus.paid and ticket.payment_ref:
+                amount_kobo = int(float(ticket.fare_ghs) * 100)
+                await refund_transaction(ticket.payment_ref, amount_kobo)
+                ticket.payment_status = PaymentStatus.refunded
+            await db.flush()
+            succeeded.append(ticket_id)
+        except Exception:  # noqa: BLE001
+            failed.append(ticket_id)
+
+    await db.commit()
+    return BatchCancelResponse(succeeded=succeeded, failed=failed)
+
+
+class RefundTicketRequest(BaseModel):
+    refund_ref: str | None = None
+
+
+@router.patch(
+    "/{ticket_id}/refund",
+    response_model=TicketResponse,
+    dependencies=[Depends(require_role(UserRole.company_admin, UserRole.super_admin))],
+)
+async def refund_ticket(
+    ticket_id: int,
+    body: RefundTicketRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Mark a ticket as refunded, storing an optional Paystack refund reference."""
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.payment_status == PaymentStatus.refunded:
+        raise HTTPException(status_code=400, detail="Ticket is already marked as refunded")
+
+    ticket.status = TicketStatus.cancelled
+    ticket.payment_status = PaymentStatus.refunded
+    ticket.refund_ref = body.refund_ref
+
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+
 @router.get("/{ticket_id}/qr")
 async def get_ticket_qr(
     ticket_id: int,
@@ -313,6 +401,98 @@ async def get_ticket_qr(
     payload = f"TICKET:{ticket.id}:{ticket.trip_id}:{ticket.seat_number}"
     png_bytes = generate_qr_png_bytes(payload)
     return Response(content=png_bytes, media_type="image/png")
+
+
+class VerifyTicketRequest(BaseModel):
+    payload: str  # format: TICKET:{id}:{trip_id}:{seat}
+
+
+class VerifyTicketResponse(BaseModel):
+    valid: bool
+    passenger_name: str | None = None
+    seat_number: int | None = None
+    status: str | None = None
+    trip_info: str | None = None
+    reason: str | None = None
+
+
+@router.post(
+    "/verify",
+    response_model=VerifyTicketResponse,
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_clerk,
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def verify_ticket(
+    body: VerifyTicketRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Verify a ticket QR code payload (TICKET:{id}:{trip_id}:{seat})."""
+    parts = body.payload.strip().split(":")
+    if len(parts) != 4 or parts[0] != "TICKET":
+        return VerifyTicketResponse(valid=False, reason="Invalid QR payload format")
+
+    try:
+        ticket_id = int(parts[1])
+        trip_id = int(parts[2])
+        seat_number = int(parts[3])
+    except (ValueError, IndexError):
+        return VerifyTicketResponse(valid=False, reason="Invalid QR payload format")
+
+    result = await db.execute(
+        select(Ticket)
+        .where(Ticket.id == ticket_id)
+        .options(
+            selectinload(Ticket.trip).selectinload(Trip.departure_station),
+            selectinload(Ticket.trip).selectinload(Trip.destination_station),
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        return VerifyTicketResponse(valid=False, reason="Ticket not found")
+
+    if ticket.trip_id != trip_id:
+        return VerifyTicketResponse(valid=False, reason="Trip mismatch")
+    if ticket.seat_number != seat_number:
+        return VerifyTicketResponse(valid=False, reason="Seat mismatch")
+    if ticket.status == TicketStatus.cancelled:
+        return VerifyTicketResponse(
+            valid=False,
+            passenger_name=ticket.passenger_name,
+            seat_number=ticket.seat_number,
+            status=ticket.status.value,
+            reason="Ticket is cancelled",
+        )
+    if ticket.status == TicketStatus.used:
+        return VerifyTicketResponse(
+            valid=False,
+            passenger_name=ticket.passenger_name,
+            seat_number=ticket.seat_number,
+            status=ticket.status.value,
+            reason="Ticket already used",
+        )
+
+    trip_info = None
+    if ticket.trip:
+        dep = ticket.trip.departure_station.name if ticket.trip.departure_station else "?"
+        dst = ticket.trip.destination_station.name if ticket.trip.destination_station else "?"
+        trip_info = f"{dep} → {dst} · {ticket.trip.departure_time.strftime('%d %b %Y %H:%M')}"
+
+    return VerifyTicketResponse(
+        valid=True,
+        passenger_name=ticket.passenger_name,
+        seat_number=ticket.seat_number,
+        status=ticket.status.value,
+        trip_info=trip_info,
+    )
 
 
 class ShareTicketRequest(BaseModel):

@@ -5,6 +5,8 @@ import { getSession } from "@/lib/session";
 import ApiKeyCard from "./api-key-card";
 import BrandColorForm from "./brand-color-form";
 import ChangePasswordCard from "./change-password-card";
+import MaxWeightCard from "./max-weight-card";
+import SlaSettingsCard from "./sla-settings-card";
 import SmsCreditsCard from "./sms-credits-card";
 import SmsPreferencesCard from "./sms-preferences-card";
 import WeightTierCard from "./weight-tier-card";
@@ -15,6 +17,8 @@ interface CompanyResponse {
   company_code: string;
   brand_color: string | null;
   api_key_prefix: string | null;
+  max_parcel_weight_kg: number | null;
+  sla_threshold_days: number;
 }
 
 interface WeightTier {
@@ -102,7 +106,15 @@ export default async function SettingsPage() {
 
           <div>
             <h2 className="text-base font-medium text-zinc-800 mb-4">Parcel Pricing</h2>
-            <WeightTierCard initialTiers={weightTiersData?.tiers ?? []} />
+            <div className="space-y-4">
+              <WeightTierCard initialTiers={weightTiersData?.tiers ?? []} />
+              <MaxWeightCard initialMaxWeight={company.max_parcel_weight_kg} />
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-base font-medium text-zinc-800 mb-4">SLA</h2>
+            <SlaSettingsCard initialThresholdDays={company.sla_threshold_days ?? 2} />
           </div>
 
           <div>

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getSession } from "@/lib/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 type Context = { params: Promise<{ path: string[] }> };
 

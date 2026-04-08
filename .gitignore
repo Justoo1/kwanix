@@ -20,10 +20,16 @@ out/
 *.tsbuildinfo
 .eslintcache
 
-# Environment
+# Environment — never commit real secrets
 .env
 .env.local
 .env.*.local
+.env.dev
+.env.staging
+.env.production
+# Keep the example template and SSL certs dir placeholder in git
+!.env.example
+!infrastructure/nginx/certs/.gitkeep
 
 # Editors
 .vscode/
@@ -35,8 +41,10 @@ out/
 .DS_Store
 Thumbs.db
 
-# Docker
-*.dockerignore
+# Docker (SSL certs only — Dockerfiles and .dockerignore ARE tracked)
+infrastructure/nginx/certs/*.crt
+infrastructure/nginx/certs/*.key
+infrastructure/nginx/certs/*.pem
 
 # Logs
 *.log
@@ -45,6 +53,7 @@ logs/
 # Generated
 apps/web/src/types/api.generated.ts
 conversation.md
+Deployment Readiness Imple.md
 docs/*.md
 CLAUDE.md
 apps/web/CLAUDE.md

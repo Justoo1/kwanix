@@ -1,4 +1,7 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_INSECURE_DEFAULTS = {"change-me-in-production", "", "secret"}
 
 
 class Settings(BaseSettings):
@@ -6,7 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://routpass:secret@localhost:5432/routpass_db"
 
     # Security
-    jwt_secret_key: str = "change-me-in-production"
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
     jwt_refresh_token_expire_days: int = 7
@@ -35,6 +38,21 @@ class Settings(BaseSettings):
     # Resend — optional; required only when manifest_email is set
     resend_api_key: str | None = None
     resend_from_email: str = "manifest@routepass.com"
+
+    # Sentry — optional; set DSN to enable error tracking
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+
+    @model_validator(mode="after")
+    def _require_strong_secrets(self) -> "Settings":
+        if self.environment == "production":
+            if self.jwt_secret_key in _INSECURE_DEFAULTS:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be set to a strong secret in production"
+                )
+            if len(self.jwt_secret_key) < 32:
+                raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,0 +1,40 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing & coverage
+.pytest_cache/
+htmlcov/
+.coverage
+*.cover
+
+# Type checking
+.mypy_cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dev-only files
+tests/
+Dockerfile
+Dockerfile.staging
+
+# Env files — never bake secrets into the image
+.env
+.env.*

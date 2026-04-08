@@ -987,6 +987,16 @@ export interface components {
              * @default 0
              */
             tickets_sold: number;
+            /**
+             * Occupancy Pct
+             * @default 0
+             */
+            occupancy_pct: number;
+            /**
+             * Is Near Full
+             * @default false
+             */
+            is_near_full: boolean;
         };
         /**
          * TripStatus

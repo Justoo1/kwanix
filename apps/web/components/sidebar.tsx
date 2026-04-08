@@ -18,6 +18,7 @@ import {
   X,
   Route,
   Webhook,
+  ClipboardList,
 } from "lucide-react";
 
 import { logout } from "@/actions/auth";
@@ -40,6 +41,7 @@ const companyAdminItems = [
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

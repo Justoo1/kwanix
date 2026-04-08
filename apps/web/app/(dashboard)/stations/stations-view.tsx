@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PlusCircle, BarChart2 } from "lucide-react";
+import { PlusCircle, BarChart2, Activity } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   BarChart,
@@ -46,6 +46,7 @@ interface StationResponse {
   location_code: string | null;
   contact_number: string | null;
   address: string | null;
+  city: string | null;
   is_hub: boolean;
   is_active: boolean;
 }
@@ -59,6 +60,8 @@ const createStationSchema = z.object({
     .max(10, "Max 10 characters")
     .optional()
     .or(z.literal("")),
+  city: z.string().max(100).optional().or(z.literal("")),
+  address: z.string().max(255).optional().or(z.literal("")),
   is_hub: z.boolean(),
 });
 
@@ -236,8 +239,10 @@ function buildColumns(canManage: boolean): ColumnDef<StationResponse>[] {
       cell: ({ row }) => (
         <div>
           <p className="font-medium text-foreground">{row.original.name}</p>
-          {row.original.address && (
-            <p className="text-xs text-muted-foreground">{row.original.address}</p>
+          {(row.original.city || row.original.address) && (
+            <p className="text-xs text-muted-foreground">
+              {[row.original.city, row.original.address].filter(Boolean).join(" · ")}
+            </p>
           )}
         </div>
       ),
@@ -304,7 +309,7 @@ function CreateStationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
   const form = useForm<CreateStationValues, unknown, CreateStationValues>({
     resolver: zodResolver(createStationSchema),
-    defaultValues: { name: "", location_code: "", is_hub: false },
+    defaultValues: { name: "", location_code: "", city: "", address: "", is_hub: false },
   });
 
   const mutation = useMutation({
@@ -314,6 +319,8 @@ function CreateStationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         body: JSON.stringify({
           name: values.name,
           location_code: values.location_code || undefined,
+          city: values.city || undefined,
+          address: values.address || undefined,
           is_hub: values.is_hub,
         }),
       }),
@@ -383,6 +390,40 @@ function CreateStationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
             <FormField
               control={form.control}
+              name="city"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    City{" "}
+                    <span className="font-normal text-muted-foreground">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="Accra" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Address{" "}
+                    <span className="font-normal text-muted-foreground">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="Tema Station, Ring Road" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
               name="is_hub"
               render={({ field }) => (
                 <FormItem>
@@ -434,6 +475,63 @@ function CreateStationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   );
 }
 
+// ── Station performance section (company_admin only) ─────────────────────────
+
+interface StationPerformanceItem {
+  station_id: number;
+  station_name: string;
+  parcels_originated: number;
+  parcels_arrived: number;
+  trips_departed: number;
+  revenue_ghs: number;
+}
+
+function StationPerformanceSection() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["station-performance"],
+    queryFn: () => clientFetch<StationPerformanceItem[]>("admin/stations/performance"),
+  });
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-zinc-200">
+        <Activity className="h-4 w-4 text-zinc-500" />
+        <h2 className="text-sm font-semibold text-zinc-700">Station Performance — Last 30 Days</h2>
+      </div>
+      {isLoading ? (
+        <p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>
+      ) : !data || data.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-muted-foreground">No data yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                <th className="px-5 py-3 text-left">Station</th>
+                <th className="px-5 py-3 text-right">Parcels Sent</th>
+                <th className="px-5 py-3 text-right">Parcels Received</th>
+                <th className="px-5 py-3 text-right">Trips Departed</th>
+                <th className="px-5 py-3 text-right">Revenue (GHS)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((s) => (
+                <tr key={s.station_id} className="border-b border-zinc-100 last:border-0 hover:bg-white/60">
+                  <td className="px-5 py-3 font-medium text-zinc-800">{s.station_name}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{s.parcels_originated}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{s.parcels_arrived}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{s.trips_departed}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{s.revenue_ghs.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 interface StationsViewProps {
@@ -474,6 +572,9 @@ export function StationsView({ canCreate, canManage }: StationsViewProps) {
         data={data ?? []}
         isLoading={isLoading}
       />
+
+      {/* Performance stats — company_admin only */}
+      {canCreate && <StationPerformanceSection />}
 
       {/* Dialog */}
       {canCreate && (

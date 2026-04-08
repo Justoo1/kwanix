@@ -17,6 +17,23 @@ export async function cancelTicket(
   }
 }
 
+export async function refundTicket(
+  ticketId: number,
+  refundRef: string | null
+): Promise<{ error?: string; success?: boolean }> {
+  try {
+    await apiFetch(`/api/v1/tickets/${ticketId}/refund`, {
+      method: "PATCH",
+      body: JSON.stringify({ refund_ref: refundRef }),
+    });
+    revalidatePath(`/tickets/${ticketId}`);
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to mark ticket as refunded.";
+    return { error: msg };
+  }
+}
+
 export async function shareTicket(
   ticketId: number,
   phone: string

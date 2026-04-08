@@ -14,7 +14,13 @@ const PROTECTED_PREFIXES = [
 ];
 
 function getSecretKey() {
-  const secret = process.env.SESSION_SECRET ?? "routepass-dev-secret-32chars!!";
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SESSION_SECRET environment variable must be set in production");
+    }
+    return new TextEncoder().encode("routepass-dev-secret-32chars!!");
+  }
   return new TextEncoder().encode(secret);
 }
 

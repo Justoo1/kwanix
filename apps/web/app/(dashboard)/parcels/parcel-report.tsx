@@ -23,7 +23,7 @@ function downloadCSV(parcels: ParcelRow[], from: string, to: string) {
   const headers = [
     "Tracking #", "Status", "Sender", "Receiver",
     "Receiver Phone", "Origin", "Destination",
-    "Weight (kg)", "Fee (GHS)", "Logged At",
+    "Weight (kg)", "Fee (GHS)", "Declared Value (GHS)", "Logged At",
   ];
 
   const rows = parcels.map((p) => [
@@ -36,6 +36,7 @@ function downloadCSV(parcels: ParcelRow[], from: string, to: string) {
     p.destination_station_name ?? p.destination_station_id,
     p.weight_kg ?? "",
     Number(p.fee_ghs).toFixed(2),
+    p.declared_value_ghs != null ? Number(p.declared_value_ghs).toFixed(2) : "",
     p.created_at
       ? new Intl.DateTimeFormat("en-GH", {
           day: "2-digit", month: "short", year: "numeric",

@@ -18,6 +18,8 @@ class Company(Base, TimestampMixin):
     brand_color: Mapped[str | None] = mapped_column(String(7))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     weight_tiers: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    max_parcel_weight_kg: Mapped[float | None] = mapped_column(nullable=True)
+    sla_threshold_days: Mapped[int] = mapped_column(default=2, nullable=False, server_default="2")
 
     # Relationships
     stations: Mapped[list["Station"]] = relationship(back_populates="company")  # noqa: F821

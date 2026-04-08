@@ -2042,6 +2042,64 @@ class TestSlaReport:
         assert response.status_code == 401
 
 
+# ── S2: Company SLA settings ───────────────────────────────────────────────────
+
+
+class TestCompanySlaSettings:
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="SLA Admin",
+            phone="233201112233",
+            email="slaadmin@test.io",
+            hashed_password=hash_password("testpass123"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.mark.asyncio
+    async def test_patch_company_settings_updates_sla_threshold(self, client, admin_token, company):
+        response = await client.patch(
+            "/api/v1/admin/company/settings",
+            json={"sla_threshold_days": 3},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["sla_threshold_days"] == 3
+
+    @pytest.mark.asyncio
+    async def test_patch_company_settings_rejects_out_of_range(self, client, admin_token):
+        response = await client.patch(
+            "/api/v1/admin/company/settings",
+            json={"sla_threshold_days": 0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_patch_company_settings_requires_company_admin(self, client, clerk_token):
+        response = await client.patch(
+            "/api/v1/admin/company/settings",
+            json={"sla_threshold_days": 5},
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert response.status_code == 403
+
+
 # ── I2: Station throughput ─────────────────────────────────────────────────────
 
 
@@ -2453,6 +2511,145 @@ class TestPublicBookingFlow:
         assert response.status_code == 400
 
 
+# ── Phase Q tests ─────────────────────────────────────────────────────────────
+
+
+class TestPhaseQ:
+    """Q1, Q4, Q5 — single-trip endpoint, expired hold cleanup, public QR."""
+
+    @pytest.fixture
+    async def bookable_trip(self, db, company, vehicle, station_accra, station_prestea):
+        from datetime import datetime, timedelta
+
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(hours=2),
+            status=TripStatus.scheduled,
+            booking_open=True,
+            price_ticket_base=30.0,
+        )
+        db.add(trip)
+        await db.flush()
+        return trip
+
+    # Q1 ── GET /api/v1/public/trips/{trip_id}
+
+    @pytest.mark.asyncio
+    async def test_get_single_public_trip(self, client, bookable_trip):
+        response = await client.get(f"/api/v1/public/trips/{bookable_trip.id}")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == bookable_trip.id
+        assert "departure_station_name" in body
+        assert "available_seat_count" in body
+
+    @pytest.mark.asyncio
+    async def test_get_single_public_trip_not_found(self, client):
+        response = await client.get("/api/v1/public/trips/99999")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_single_public_trip_booking_closed(
+        self, client, db, company, vehicle, station_accra, station_prestea
+    ):
+        """Trip with booking_open=False still returns 200 (not 404)."""
+        from datetime import datetime, timedelta
+
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(hours=3),
+            status=TripStatus.scheduled,
+            booking_open=False,
+            price_ticket_base=20.0,
+        )
+        db.add(trip)
+        await db.flush()
+        response = await client.get(f"/api/v1/public/trips/{trip.id}")
+        assert response.status_code == 200
+
+    # Q4 ── Expired hold cleanup in seat map
+
+    @pytest.mark.asyncio
+    async def test_expired_hold_shown_as_available(self, client, db, bookable_trip):
+        """A pending ticket whose booking_expires_at is in the past should not block the seat."""
+        from datetime import datetime, timedelta
+
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource
+
+        expired_ticket = Ticket(
+            company_id=bookable_trip.company_id,
+            trip_id=bookable_trip.id,
+            passenger_name="Ghost Passenger",
+            passenger_phone="233551234567",
+            seat_number=7,
+            fare_ghs=30.0,
+            source=TicketSource.online,
+            payment_status=PaymentStatus.pending,
+            booking_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+        db.add(expired_ticket)
+        await db.flush()
+
+        response = await client.get(f"/api/v1/public/trips/{bookable_trip.id}/seats")
+        assert response.status_code == 200
+        body = response.json()
+        assert 7 not in body["taken"]
+
+    # Q5 ── Public QR endpoint
+
+    @pytest.mark.asyncio
+    async def test_public_qr_paid_ticket(self, client, db, bookable_trip):
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource
+
+        ticket = Ticket(
+            company_id=bookable_trip.company_id,
+            trip_id=bookable_trip.id,
+            passenger_name="QR Passenger",
+            passenger_phone="233551234567",
+            seat_number=3,
+            fare_ghs=30.0,
+            source=TicketSource.online,
+            payment_status=PaymentStatus.paid,
+            payment_ref="RP-999-abc12345",
+        )
+        db.add(ticket)
+        await db.flush()
+
+        response = await client.get(f"/api/v1/public/tickets/{ticket.id}/qr")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_public_qr_unpaid_ticket_returns_404(self, client, db, bookable_trip):
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource
+
+        ticket = Ticket(
+            company_id=bookable_trip.company_id,
+            trip_id=bookable_trip.id,
+            passenger_name="Unpaid Passenger",
+            passenger_phone="233551234567",
+            seat_number=4,
+            fare_ghs=30.0,
+            source=TicketSource.online,
+            payment_status=PaymentStatus.pending,
+        )
+        db.add(ticket)
+        await db.flush()
+
+        response = await client.get(f"/api/v1/public/tickets/{ticket.id}/qr")
+        assert response.status_code == 404
+
+
 # ── Phase K tests ─────────────────────────────────────────────────────────────
 
 
@@ -2610,20 +2807,10 @@ class TestTicketEmailReceipt:
     @pytest.mark.asyncio
     async def test_send_ticket_email_called_on_payment(self, monkeypatch):
         """send_ticket_email must never raise — smoke test the happy path."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from app.integrations.email import send_ticket_email
 
-        called = []
-
-        def _fake_post(*args, **kwargs):
-            called.append(True)
-
-            class R:
-                def raise_for_status(self):
-                    pass
-
-            return R()
-
-        monkeypatch.setattr("app.integrations.email.httpx.post", _fake_post)
         monkeypatch.setattr(
             "app.integrations.email.settings",
             type(
@@ -2636,42 +2823,51 @@ class TestTicketEmailReceipt:
             )(),
         )
 
-        send_ticket_email(
-            passenger_name="Kwame",
-            passenger_email="kwame@example.com",
-            trip_route="Accra → Kumasi",
-            departure_time="06 Apr 2026 08:00",
-            seat_number=5,
-            fare_ghs=30.0,
-            payment_ref="RP-123",
-            company_name="STC",
-        )
-        assert called, "httpx.post should have been called"
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("app.integrations.email.httpx.AsyncClient", return_value=mock_client):
+            await send_ticket_email(
+                passenger_name="Kwame",
+                passenger_email="kwame@example.com",
+                trip_route="Accra → Kumasi",
+                departure_time="06 Apr 2026 08:00",
+                seat_number=5,
+                fare_ghs=30.0,
+                payment_ref="RP-123",
+                company_name="STC",
+            )
+        mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_ticket_email_skips_without_api_key(self, monkeypatch):
+        from unittest.mock import AsyncMock, patch
+
         from app.integrations.email import send_ticket_email
 
-        called = []
-        monkeypatch.setattr(
-            "app.integrations.email.httpx.post", lambda *a, **kw: called.append(True)
-        )
         monkeypatch.setattr(
             "app.integrations.email.settings",
             type("S", (), {"resend_api_key": "", "resend_from_email": "x@x.com"})(),
         )
 
-        send_ticket_email(
-            passenger_name="A",
-            passenger_email="a@example.com",
-            trip_route="X → Y",
-            departure_time="now",
-            seat_number=1,
-            fare_ghs=10.0,
-            payment_ref=None,
-            company_name="Co",
-        )
-        assert not called
+        with patch("app.integrations.email.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock()
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            await send_ticket_email(
+                passenger_name="A",
+                passenger_email="a@example.com",
+                trip_route="X → Y",
+                departure_time="now",
+                seat_number=1,
+                fare_ghs=10.0,
+                payment_ref=None,
+                company_name="Co",
+            )
+            mock_cls.assert_not_called()
 
 
 class TestGenerateSchedule:
@@ -2965,3 +3161,1040 @@ class TestStationAssignment:
             json={"station_id": 1},
         )
         assert resp.status_code == 403
+
+
+# ── M1 · Vehicle Utilisation Report ──────────────────────────────────────────
+
+
+class TestVehicleUtilisation:
+    """M1 — GET /admin/vehicles/utilisation."""
+
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Admin",
+            phone="233209000040",
+            hashed_password=hash_password("pass"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.mark.asyncio
+    async def test_returns_vehicle_list(self, client, admin_token, vehicle):
+        resp = await client.get(
+            "/api/v1/admin/vehicles/utilisation",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, list)
+        assert len(body) >= 1
+        item = body[0]
+        assert "vehicle_id" in item
+        assert "plate_number" in item
+        assert "trips_total" in item
+        assert "trips_last_30_days" in item
+        assert "avg_occupancy_pct" in item
+        assert "total_revenue_ghs" in item
+        assert "is_available" in item
+
+    @pytest.mark.asyncio
+    async def test_requires_company_admin(self, client, clerk_token):
+        resp = await client.get(
+            "/api/v1/admin/vehicles/utilisation",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 403
+
+
+# ── M2 · Ticket Refund ────────────────────────────────────────────────────────
+
+
+class TestTicketRefund:
+    """M2 — PATCH /tickets/{id}/refund."""
+
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Admin",
+            phone="233209000050",
+            hashed_password=hash_password("pass"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.fixture
+    async def paid_ticket(self, db, company, vehicle, station_accra, station_prestea, admin_user):
+        from datetime import UTC, datetime, timedelta
+
+        from app.models.ticket import PaymentStatus, Ticket, TicketStatus
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(hours=2),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        ticket = Ticket(
+            company_id=company.id,
+            trip_id=trip.id,
+            created_by_id=admin_user.id,
+            passenger_name="Ama Owusu",
+            passenger_phone="233241234567",
+            seat_number=5,
+            fare_ghs=30.0,
+            status=TicketStatus.valid,
+            payment_status=PaymentStatus.paid,
+            payment_ref="paystack-ref-001",
+        )
+        db.add(ticket)
+        await db.flush()
+        return ticket
+
+    @pytest.mark.asyncio
+    async def test_refund_sets_status_and_ref(self, client, admin_token, paid_ticket):
+        resp = await client.patch(
+            f"/api/v1/tickets/{paid_ticket.id}/refund",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"refund_ref": "ext-ref-abc123"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["payment_status"] == "refunded"
+        assert body["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_refund_without_ref_is_ok(self, client, admin_token, paid_ticket):
+        resp = await client.patch(
+            f"/api/v1/tickets/{paid_ticket.id}/refund",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["payment_status"] == "refunded"
+
+    @pytest.mark.asyncio
+    async def test_refund_already_refunded_returns_400(self, client, admin_token, paid_ticket):
+        await client.patch(
+            f"/api/v1/tickets/{paid_ticket.id}/refund",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={},
+        )
+        resp = await client.patch(
+            f"/api/v1/tickets/{paid_ticket.id}/refund",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_refund_requires_company_admin(self, client, clerk_token, paid_ticket):
+        resp = await client.patch(
+            f"/api/v1/tickets/{paid_ticket.id}/refund",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={},
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_refund_nonexistent_ticket_404(self, client, admin_token):
+        resp = await client.patch(
+            "/api/v1/tickets/999999/refund",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={},
+        )
+        assert resp.status_code == 404
+
+
+# ── M4 · Station Performance Dashboard ───────────────────────────────────────
+
+
+class TestStationPerformance:
+    """M4 — GET /admin/stations/performance."""
+
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Admin",
+            phone="233209000060",
+            hashed_password=hash_password("pass"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.mark.asyncio
+    async def test_returns_station_list(self, client, admin_token, station_accra, station_prestea):
+        resp = await client.get(
+            "/api/v1/admin/stations/performance",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, list)
+        assert len(body) >= 2
+        keys = {
+            "station_id",
+            "station_name",
+            "parcels_originated",
+            "parcels_arrived",
+            "trips_departed",
+            "revenue_ghs",
+        }
+        for item in body:
+            assert keys <= item.keys()
+
+    @pytest.mark.asyncio
+    async def test_requires_company_admin(self, client, clerk_token):
+        resp = await client.get(
+            "/api/v1/admin/stations/performance",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 403
+
+
+# ── M5 · Audit Log Viewer ─────────────────────────────────────────────────────
+
+
+class TestAuditLog:
+    """M5 — GET /admin/audit-log."""
+
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Admin",
+            phone="233209000070",
+            hashed_password=hash_password("pass"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.fixture
+    async def parcel_with_log(
+        self, db, company, station_accra, station_prestea, admin_user, tracking_seq
+    ):
+        from datetime import UTC, datetime
+
+        from app.models.parcel import Parcel, ParcelLog, ParcelStatus
+
+        p = Parcel(
+            company_id=company.id,
+            tracking_number="MTEST0001",
+            sender_name="Kofi",
+            sender_phone="233241111111",
+            receiver_name="Ama",
+            receiver_phone="233551111111",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=10.0,
+            status=ParcelStatus.in_transit,
+        )
+        db.add(p)
+        await db.flush()
+
+        log = ParcelLog(
+            parcel_id=p.id,
+            clerk_id=admin_user.id,
+            previous_status=ParcelStatus.pending,
+            new_status=ParcelStatus.in_transit,
+            note="Loaded onto bus GR-TEST-01",
+            occurred_at=datetime.now(UTC),
+        )
+        db.add(log)
+        await db.flush()
+        return p
+
+    @pytest.mark.asyncio
+    async def test_returns_log_entries(self, client, admin_token, parcel_with_log):
+        resp = await client.get(
+            "/api/v1/admin/audit-log",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, list)
+        assert len(body) >= 1
+        entry = body[0]
+        assert "parcel_tracking_number" in entry
+        assert "clerk_name" in entry
+        assert "previous_status" in entry
+        assert "new_status" in entry
+        assert "occurred_at" in entry
+
+    @pytest.mark.asyncio
+    async def test_requires_company_admin(self, client, clerk_token):
+        resp = await client.get(
+            "/api/v1/admin/audit-log",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 403
+
+
+# ── N1 · Bulk Ticket Cancel ────────────────────────────────────────────────────
+
+
+class TestBulkTicketCancel:
+    """N1 — POST /api/v1/tickets/batch-cancel."""
+
+    @pytest.fixture
+    async def manager_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Manager N1",
+            phone="233209001100",
+            hashed_password=hash_password("pass"),
+            role=UserRole.station_manager,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def manager_token(self, manager_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(manager_user)
+
+    @pytest.fixture
+    async def trip_with_tickets(self, db, company, vehicle, station_accra, station_prestea):
+        from datetime import datetime
+
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        tickets = []
+        for seat in range(1, 4):
+            t = Ticket(
+                company_id=company.id,
+                trip_id=trip.id,
+                passenger_name=f"Passenger {seat}",
+                passenger_phone=f"23320900110{seat}",
+                seat_number=seat,
+                fare_ghs=50.0,
+                source=TicketSource.counter,
+                payment_status=PaymentStatus.pending,
+                status=TicketStatus.valid,
+            )
+            db.add(t)
+            tickets.append(t)
+        await db.flush()
+        return trip, tickets
+
+    @pytest.mark.asyncio
+    async def test_batch_cancel_succeeds(self, client, manager_token, trip_with_tickets):
+        _, tickets = trip_with_tickets
+        ids = [t.id for t in tickets]
+        resp = await client.post(
+            "/api/v1/tickets/batch-cancel",
+            headers={"Authorization": f"Bearer {manager_token}"},
+            json={"ticket_ids": ids},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body["succeeded"]) == set(ids)
+        assert body["failed"] == []
+
+    @pytest.mark.asyncio
+    async def test_already_cancelled_goes_to_failed(self, client, manager_token, trip_with_tickets):
+        from app.models.ticket import TicketStatus
+
+        _, tickets = trip_with_tickets
+        # Pre-cancel first ticket
+        tickets[0].status = TicketStatus.cancelled
+
+        resp = await client.post(
+            "/api/v1/tickets/batch-cancel",
+            headers={"Authorization": f"Bearer {manager_token}"},
+            json={"ticket_ids": [tickets[0].id]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert tickets[0].id in body["failed"]
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_ticket_goes_to_failed(self, client, manager_token):
+        resp = await client.post(
+            "/api/v1/tickets/batch-cancel",
+            headers={"Authorization": f"Bearer {manager_token}"},
+            json={"ticket_ids": [999999]},
+        )
+        assert resp.status_code == 200
+        assert 999999 in resp.json()["failed"]
+
+    @pytest.mark.asyncio
+    async def test_requires_manager_role(self, client, clerk_token, trip_with_tickets):
+        _, tickets = trip_with_tickets
+        resp = await client.post(
+            "/api/v1/tickets/batch-cancel",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"ticket_ids": [tickets[0].id]},
+        )
+        assert resp.status_code == 403
+
+
+# ── N2 · Parcel Search by Receiver Phone ──────────────────────────────────────
+
+
+class TestParcelReceiverPhoneSearch:
+    """N2 — GET /api/v1/parcels?q= matching receiver_phone."""
+
+    @pytest.fixture
+    async def sample_parcel(self, db, company, station_accra, station_prestea, clerk_user):
+        from app.models.parcel import Parcel, ParcelStatus
+
+        p = Parcel(
+            company_id=company.id,
+            tracking_number="N2-PHONE-00001",
+            sender_name="Kwame Search",
+            sender_phone="233241000001",
+            receiver_name="Ama Receiver",
+            receiver_phone="233557771234",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=10.0,
+            status=ParcelStatus.pending,
+            created_by_id=clerk_user.id,
+        )
+        db.add(p)
+        await db.flush()
+        return p
+
+    @pytest.mark.asyncio
+    async def test_search_by_full_receiver_phone(self, client, clerk_token, sample_parcel):
+        resp = await client.get(
+            "/api/v1/parcels?q=233557771234",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert any(p["tracking_number"] == "N2-PHONE-00001" for p in body)
+
+    @pytest.mark.asyncio
+    async def test_search_by_partial_receiver_phone(self, client, clerk_token, sample_parcel):
+        resp = await client.get(
+            "/api/v1/parcels?q=557771234",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert any(p["tracking_number"] == "N2-PHONE-00001" for p in body)
+
+    @pytest.mark.asyncio
+    async def test_no_match_returns_empty(self, client, clerk_token, sample_parcel):
+        resp = await client.get(
+            "/api/v1/parcels?q=233000000000",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert not any(p["tracking_number"] == "N2-PHONE-00001" for p in body)
+
+
+# ── N3 · Trip Capacity Warning ────────────────────────────────────────────────
+
+
+class TestTripCapacityWarning:
+    """N3 — occupancy_pct and is_near_full in trip list/detail responses."""
+
+    @pytest.fixture
+    async def loaded_trip(self, db, company, vehicle, station_accra, station_prestea):
+        """Trip with 41 tickets out of 50 capacity = 82% -> is_near_full."""
+        from datetime import datetime
+
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        # 41 tickets on a 50-seat bus = 82%
+        for seat in range(1, 42):
+            t = Ticket(
+                company_id=company.id,
+                trip_id=trip.id,
+                passenger_name=f"Pass {seat}",
+                passenger_phone=f"2332090{seat:05d}",
+                seat_number=seat,
+                fare_ghs=30.0,
+                source=TicketSource.counter,
+                payment_status=PaymentStatus.pending,
+                status=TicketStatus.valid,
+            )
+            db.add(t)
+        await db.flush()
+        return trip
+
+    @pytest.mark.asyncio
+    async def test_trip_list_includes_occupancy_fields(self, client, clerk_token, loaded_trip):
+        resp = await client.get(
+            "/api/v1/trips",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        trips = resp.json()
+        match = next((t for t in trips if t["id"] == loaded_trip.id), None)
+        assert match is not None
+        assert "occupancy_pct" in match
+        assert "is_near_full" in match
+        assert match["is_near_full"] is True
+        assert match["occupancy_pct"] >= 80.0
+
+    @pytest.mark.asyncio
+    async def test_trip_detail_includes_occupancy_fields(self, client, clerk_token, loaded_trip):
+        resp = await client.get(
+            f"/api/v1/trips/{loaded_trip.id}",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "occupancy_pct" in body
+        assert "is_near_full" in body
+        assert body["is_near_full"] is True
+
+    @pytest.mark.asyncio
+    async def test_empty_trip_is_not_near_full(
+        self, client, clerk_token, vehicle, station_accra, station_prestea, company, db
+    ):
+        from datetime import datetime
+
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.scheduled,
+        )
+        db.add(trip)
+        await db.flush()
+
+        resp = await client.get(
+            f"/api/v1/trips/{trip.id}",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["is_near_full"] is False
+        assert body["occupancy_pct"] == 0.0
+
+
+# ── N5 · Parcel OTP Resend ────────────────────────────────────────────────────
+
+
+class TestParcelOtpResend:
+    """N5 — POST /api/v1/parcels/{id}/resend-otp."""
+
+    @pytest.fixture
+    async def arrived_parcel(self, db, company, station_accra, station_prestea, clerk_user):
+        from datetime import datetime
+
+        from app.models.parcel import Parcel, ParcelStatus
+        from app.services.otp_service import generate_otp
+
+        otp_code, otp_expires_at = generate_otp()
+        p = Parcel(
+            company_id=company.id,
+            tracking_number="N5-OTP-00001",
+            sender_name="OTP Sender",
+            sender_phone="233241000099",
+            receiver_name="OTP Receiver",
+            receiver_phone="233557770099",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=10.0,
+            status=ParcelStatus.arrived,
+            otp_code=otp_code,
+            otp_expires_at=otp_expires_at,
+            otp_attempt_count=3,
+            arrived_at=datetime.now(UTC),
+            created_by_id=clerk_user.id,
+        )
+        db.add(p)
+        await db.flush()
+        return p
+
+    @pytest.fixture
+    async def pending_parcel(self, db, company, station_accra, station_prestea, clerk_user):
+        from app.models.parcel import Parcel, ParcelStatus
+
+        p = Parcel(
+            company_id=company.id,
+            tracking_number="N5-OTP-00002",
+            sender_name="Pending Sender",
+            sender_phone="233241000098",
+            receiver_name="Pending Receiver",
+            receiver_phone="233557770098",
+            origin_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            fee_ghs=10.0,
+            status=ParcelStatus.pending,
+            created_by_id=clerk_user.id,
+        )
+        db.add(p)
+        await db.flush()
+        return p
+
+    @pytest.mark.asyncio
+    async def test_resend_otp_on_arrived_parcel(self, client, clerk_token, arrived_parcel):
+        resp = await client.post(
+            f"/api/v1/parcels/{arrived_parcel.id}/resend-otp",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["sent"] is True
+
+    @pytest.mark.asyncio
+    async def test_resend_otp_resets_attempt_count(self, client, clerk_token, arrived_parcel, db):
+        await client.post(
+            f"/api/v1/parcels/{arrived_parcel.id}/resend-otp",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        await db.refresh(arrived_parcel)
+        assert arrived_parcel.otp_attempt_count == 0
+
+    @pytest.mark.asyncio
+    async def test_resend_otp_on_pending_parcel_fails(self, client, clerk_token, pending_parcel):
+        resp = await client.post(
+            f"/api/v1/parcels/{pending_parcel.id}/resend-otp",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["code"] == "NOT_ARRIVED"
+
+    @pytest.mark.asyncio
+    async def test_resend_otp_requires_auth(self, client, arrived_parcel):
+        resp = await client.post(f"/api/v1/parcels/{arrived_parcel.id}/resend-otp")
+        assert resp.status_code == 401
+
+
+# ── O1 · Public Route Search ──────────────────────────────────────────────────
+
+
+class TestPublicRouteSearch:
+    """O1 — GET /api/v1/public/routes?from_city=&to_city="""
+
+    @pytest.fixture
+    async def bookable_trip_with_cities(self, db, company, vehicle, station_accra, station_prestea):
+        from datetime import datetime, timedelta
+
+        from app.models.trip import Trip, TripStatus
+
+        # Give stations city names
+        station_accra.city = "Accra"
+        station_prestea.city = "Kumasi"
+        await db.flush()
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC) + timedelta(hours=3),
+            status=TripStatus.scheduled,
+            booking_open=True,
+            price_ticket_base=45.0,
+        )
+        db.add(trip)
+        await db.flush()
+        return trip
+
+    @pytest.mark.asyncio
+    async def test_route_search_no_filter_returns_all_bookable(
+        self, client, bookable_trip_with_cities
+    ):
+        resp = await client.get("/api/v1/public/routes")
+        assert resp.status_code == 200
+        ids = [r["trip_id"] for r in resp.json()]
+        assert bookable_trip_with_cities.id in ids
+
+    @pytest.mark.asyncio
+    async def test_route_search_filter_by_from_city(self, client, bookable_trip_with_cities):
+        resp = await client.get("/api/v1/public/routes?from_city=Accra")
+        assert resp.status_code == 200
+        ids = [r["trip_id"] for r in resp.json()]
+        assert bookable_trip_with_cities.id in ids
+
+    @pytest.mark.asyncio
+    async def test_route_search_filter_no_match_returns_empty(
+        self, client, bookable_trip_with_cities
+    ):
+        resp = await client.get("/api/v1/public/routes?from_city=Tamale")
+        assert resp.status_code == 200
+        ids = [r["trip_id"] for r in resp.json()]
+        assert bookable_trip_with_cities.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_route_search_result_has_expected_fields(self, client, bookable_trip_with_cities):
+        resp = await client.get("/api/v1/public/routes")
+        assert resp.status_code == 200
+        item = next((r for r in resp.json() if r["trip_id"] == bookable_trip_with_cities.id), None)
+        assert item is not None
+        assert "company_name" in item
+        assert "seats_available" in item
+        assert "price_ticket_base" in item
+        assert item["price_ticket_base"] == 45.0
+
+
+# ── O3 · Ticket Validity Scanner ─────────────────────────────────────────────
+
+
+class TestTicketVerify:
+    """O3 — POST /api/v1/tickets/verify"""
+
+    @pytest.fixture
+    async def valid_ticket(self, db, company, vehicle, station_accra, station_prestea, clerk_user):
+        from datetime import datetime
+
+        from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
+        from app.models.trip import Trip, TripStatus
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        ticket = Ticket(
+            company_id=company.id,
+            trip_id=trip.id,
+            passenger_name="Kwame Verify",
+            passenger_phone="233241000001",
+            seat_number=7,
+            fare_ghs=50.0,
+            source=TicketSource.counter,
+            payment_status=PaymentStatus.pending,
+            status=TicketStatus.valid,
+        )
+        db.add(ticket)
+        await db.flush()
+        return ticket
+
+    @pytest.mark.asyncio
+    async def test_verify_valid_ticket(self, client, clerk_token, valid_ticket):
+        payload = f"TICKET:{valid_ticket.id}:{valid_ticket.trip_id}:{valid_ticket.seat_number}"
+        resp = await client.post(
+            "/api/v1/tickets/verify",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"payload": payload},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["valid"] is True
+        assert body["passenger_name"] == "Kwame Verify"
+        assert body["seat_number"] == 7
+
+    @pytest.mark.asyncio
+    async def test_verify_cancelled_ticket_returns_invalid(self, client, clerk_token, valid_ticket):
+        from app.models.ticket import TicketStatus
+
+        valid_ticket.status = TicketStatus.cancelled
+
+        payload = f"TICKET:{valid_ticket.id}:{valid_ticket.trip_id}:{valid_ticket.seat_number}"
+        resp = await client.post(
+            "/api/v1/tickets/verify",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"payload": payload},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["valid"] is False
+        assert "cancelled" in body["reason"].lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_bad_payload_returns_invalid(self, client, clerk_token):
+        resp = await client.post(
+            "/api/v1/tickets/verify",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"payload": "NOTATICKET:1:2"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_verify_wrong_trip_id_returns_invalid(self, client, clerk_token, valid_ticket):
+        payload = f"TICKET:{valid_ticket.id}:999999:{valid_ticket.seat_number}"
+        resp = await client.post(
+            "/api/v1/tickets/verify",
+            headers={"Authorization": f"Bearer {clerk_token}"},
+            json={"payload": payload},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_verify_requires_auth(self, client):
+        resp = await client.post(
+            "/api/v1/tickets/verify",
+            json={"payload": "TICKET:1:1:1"},
+        )
+        assert resp.status_code == 401
+
+
+# ── O4 · SMS on Trip Status Change ───────────────────────────────────────────
+
+
+class TestTripStatusSms:
+    """O4 — SMS helpers for trip departed/arrived."""
+
+    def test_msg_trip_departed_contains_plate_and_station(self):
+        from app.integrations.arkesel import msg_trip_departed
+
+        msg = msg_trip_departed("GR-1234-24", "Accra")
+        assert "GR-1234-24" in msg
+        assert "Accra" in msg
+
+    def test_msg_trip_departed_with_eta(self):
+        from app.integrations.arkesel import msg_trip_departed
+
+        msg = msg_trip_departed("GR-1234-24", "Accra", eta_str="14:30")
+        assert "14:30" in msg
+
+    def test_msg_trip_arrived_contains_destination(self):
+        from app.integrations.arkesel import msg_trip_arrived
+
+        msg = msg_trip_arrived("Kumasi")
+        assert "Kumasi" in msg
+
+    @pytest.mark.asyncio
+    async def test_update_trip_status_to_departed_ok(
+        self, client, db, company, vehicle, station_accra, station_prestea
+    ):
+        """Status transition to departed succeeds (SMS is background/skipped in tests)."""
+        from datetime import datetime
+
+        from app.models.trip import Trip, TripStatus
+        from app.models.user import User, UserRole
+        from app.services.auth_service import create_access_token, hash_password
+
+        mgr = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="O4 Manager",
+            phone="233209004001",
+            hashed_password=hash_password("pass"),
+            role=UserRole.station_manager,
+        )
+        db.add(mgr)
+        await db.flush()
+        token = create_access_token(mgr)
+
+        trip = Trip(
+            company_id=company.id,
+            vehicle_id=vehicle.id,
+            departure_station_id=station_accra.id,
+            destination_station_id=station_prestea.id,
+            departure_time=datetime.now(UTC),
+            status=TripStatus.loading,
+        )
+        db.add(trip)
+        await db.flush()
+
+        resp = await client.patch(
+            f"/api/v1/trips/{trip.id}/status",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"status": "departed"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "departed"
+
+
+# ── O5 · Parcel Weight Validation ─────────────────────────────────────────────
+
+
+class TestParcelWeightValidation:
+    """O5 — max_parcel_weight_kg guard on parcel creation."""
+
+    @pytest.fixture
+    async def admin_user(self, db, company, station_accra):
+        from app.models.user import User, UserRole
+        from app.services.auth_service import hash_password
+
+        u = User(
+            company_id=company.id,
+            station_id=station_accra.id,
+            full_name="Weight Admin O5",
+            phone="233209005001",
+            hashed_password=hash_password("pass"),
+            role=UserRole.company_admin,
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    @pytest.fixture
+    async def admin_token(self, admin_user):
+        from app.services.auth_service import create_access_token
+
+        return create_access_token(admin_user)
+
+    @pytest.mark.asyncio
+    async def test_parcel_exceeds_max_weight_rejected(
+        self,
+        client,
+        admin_token,
+        company,
+        station_accra,
+        station_prestea,
+        tracking_seq,
+    ):
+        company.max_parcel_weight_kg = 10.0
+
+        resp = await client.post(
+            "/api/v1/parcels",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "sender_name": "Ama",
+                "sender_phone": "0241234567",
+                "receiver_name": "Kofi",
+                "receiver_phone": "0551234568",
+                "origin_station_id": station_accra.id,
+                "destination_station_id": station_prestea.id,
+                "weight_kg": 15.0,
+                "fee_ghs": 5.0,
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["code"] == "WEIGHT_EXCEEDED"
+
+    @pytest.mark.asyncio
+    async def test_parcel_within_max_weight_accepted(
+        self,
+        client,
+        admin_token,
+        company,
+        station_accra,
+        station_prestea,
+        tracking_seq,
+    ):
+        company.max_parcel_weight_kg = 20.0
+
+        resp = await client.post(
+            "/api/v1/parcels",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "sender_name": "Ama",
+                "sender_phone": "0241234567",
+                "receiver_name": "Kofi",
+                "receiver_phone": "0551234568",
+                "origin_station_id": station_accra.id,
+                "destination_station_id": station_prestea.id,
+                "weight_kg": 10.0,
+                "fee_ghs": 5.0,
+            },
+        )
+        assert resp.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_parcel_no_max_weight_set_always_accepted(
+        self,
+        client,
+        admin_token,
+        company,
+        station_accra,
+        station_prestea,
+        tracking_seq,
+    ):
+        company.max_parcel_weight_kg = None
+
+        resp = await client.post(
+            "/api/v1/parcels",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "sender_name": "Ama",
+                "sender_phone": "0241234567",
+                "receiver_name": "Kofi",
+                "receiver_phone": "0551234568",
+                "origin_station_id": station_accra.id,
+                "destination_station_id": station_prestea.id,
+                "weight_kg": 999.0,
+                "fee_ghs": 5.0,
+            },
+        )
+        assert resp.status_code == 201

@@ -170,6 +170,21 @@ def msg_parcel_pickup_reminder(tracking_id: str, station_name: str) -> str:
     )
 
 
+def msg_trip_departed(plate_number: str, from_station: str, eta_str: str | None = None) -> str:
+    msg = f"Your bus {plate_number} has departed {from_station}."
+    if eta_str:
+        msg += f" ETA approx {eta_str}."
+    msg += " - RoutePass"
+    return msg
+
+
+def msg_trip_arrived(destination: str) -> str:
+    return (
+        f"Your bus has arrived at {destination}. "
+        "Please proceed to collect your luggage. - RoutePass"
+    )
+
+
 def msg_trip_reminder(
     passenger_name: str, from_station: str, to_station: str, departure_time: str
 ) -> str:

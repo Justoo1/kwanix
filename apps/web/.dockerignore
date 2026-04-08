@@ -1,0 +1,28 @@
+# Dependencies — installed fresh in the builder stage
+node_modules/
+
+# Next.js build output — built inside Docker
+.next/
+
+# Dev server cache
+.cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env files — never bake secrets into the image
+.env
+.env.*
+.env.local
+.env.production.local
+.env.staging.local
+.env.development.local
+
+# Type generation artifacts
+types/api.generated.ts
+
+# Test output
+coverage/

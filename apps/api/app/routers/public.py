@@ -3,18 +3,22 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.dependencies.auth import get_db_public
-from app.integrations.paystack import initialize_transaction
+from app.integrations.paystack import initialize_transaction, verify_transaction
 from app.middleware.rate_limit import limiter
 from app.models.company import Company
+from app.models.station import Station
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
 from app.models.trip import Trip, TripStatus
+from app.services.qr_service import generate_qr_png_bytes
 from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()
@@ -51,6 +55,7 @@ class PublicTripResponse(BaseModel):
     price_ghs: float | None
     company_name: str
     brand_color: str | None
+    booking_open: bool
 
 
 class SeatMapResponse(BaseModel):
@@ -94,7 +99,103 @@ class PublicTicketResponse(BaseModel):
     brand_color: str | None
 
 
+class PublicRouteResult(BaseModel):
+    company_name: str
+    company_code: str
+    trip_id: int
+    departure_time: str
+    departure_station_name: str
+    departure_station_city: str | None
+    destination_station_name: str
+    destination_station_city: str | None
+    price_ticket_base: float | None
+    seats_available: int
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/routes", response_model=list[PublicRouteResult])
+@limiter.limit("60/minute")
+async def search_public_routes(
+    request: Request,
+    from_city: str | None = None,
+    to_city: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db_public),
+):
+    """
+    Cross-tenant route search for passengers. Returns booking-open trips
+    grouped by company, optionally filtered by departure/destination city.
+    No authentication required.
+    """
+    q = (
+        select(Trip)
+        .where(
+            Trip.booking_open.is_(True),
+            Trip.status.in_([TripStatus.scheduled, TripStatus.loading]),
+            Trip.departure_time > func.now(),
+        )
+        .options(
+            selectinload(Trip.vehicle),
+            selectinload(Trip.departure_station),
+            selectinload(Trip.destination_station),
+            selectinload(Trip.company),
+            selectinload(Trip.tickets),
+        )
+        .order_by(Trip.departure_time.asc())
+    )
+
+    if from_city:
+        dep_alias = from_city.strip()
+        q = q.join(Station, Trip.departure_station_id == Station.id).where(
+            Station.city.ilike(f"%{dep_alias}%")
+        )
+    if to_city:
+        # Need a separate join for destination — use a subquery approach
+        dest_sub = select(Station.id).where(Station.city.ilike(f"%{to_city.strip()}%"))
+        q = q.where(Trip.destination_station_id.in_(dest_sub))
+
+    result = await db.execute(q.limit(limit).offset(offset))
+    trips = result.scalars().all()
+
+    output: list[PublicRouteResult] = []
+    for trip in trips:
+        active_seats = sum(
+            1
+            for t in trip.tickets
+            if t.status != TicketStatus.cancelled
+            and (
+                t.payment_status == PaymentStatus.paid
+                or (
+                    t.payment_status == PaymentStatus.pending
+                    and t.booking_expires_at is not None
+                    and t.booking_expires_at > datetime.now(UTC)
+                )
+            )
+        )
+        capacity = trip.vehicle.capacity if trip.vehicle else 0
+        seats_available = max(0, capacity - active_seats)
+
+        dep_station = trip.departure_station
+        dst_station = trip.destination_station
+
+        output.append(
+            PublicRouteResult(
+                company_name=trip.company.name,
+                company_code=trip.company.company_code,
+                trip_id=trip.id,
+                departure_time=trip.departure_time.isoformat(),
+                departure_station_name=dep_station.name if dep_station else "",
+                departure_station_city=getattr(dep_station, "city", None),
+                destination_station_name=dst_station.name if dst_station else "",
+                destination_station_city=getattr(dst_station, "city", None),
+                price_ticket_base=float(trip.price_ticket_base) if trip.price_ticket_base else None,
+                seats_available=seats_available,
+            )
+        )
+    return output
 
 
 @router.get("/trips", response_model=list[PublicTripResponse])
@@ -104,6 +205,8 @@ async def list_public_trips(
     from_station_id: int | None = None,
     to_station_id: int | None = None,
     date: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_public),
 ):
     """Return trips open for online booking."""
@@ -138,7 +241,7 @@ async def list_public_trips(
             ) from err
         q = q.where(func.date(Trip.departure_time) == day)
 
-    result = await db.execute(q)
+    result = await db.execute(q.limit(limit).offset(offset))
     trips = result.scalars().all()
 
     output = []
@@ -168,9 +271,61 @@ async def list_public_trips(
                 price_ghs=float(trip.price_ticket_base) if trip.price_ticket_base else None,
                 company_name=trip.company.name,
                 brand_color=trip.company.brand_color,
+                booking_open=trip.booking_open,
             )
         )
     return output
+
+
+@router.get("/trips/{trip_id}", response_model=PublicTripResponse)
+@limiter.limit("100/minute")
+async def get_public_trip(
+    request: Request,
+    trip_id: int,
+    db: AsyncSession = Depends(get_db_public),
+):
+    """Return a single trip by ID. Returns 200 even if booking_open=False."""
+    result = await db.execute(
+        select(Trip)
+        .where(Trip.id == trip_id)
+        .options(
+            selectinload(Trip.vehicle),
+            selectinload(Trip.departure_station),
+            selectinload(Trip.destination_station),
+            selectinload(Trip.company),
+            selectinload(Trip.tickets),
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    active_seats = sum(
+        1
+        for t in trip.tickets
+        if t.status != TicketStatus.cancelled
+        and (
+            t.payment_status == PaymentStatus.paid
+            or (
+                t.payment_status == PaymentStatus.pending
+                and t.booking_expires_at is not None
+                and t.booking_expires_at > datetime.now(UTC)
+            )
+        )
+    )
+    capacity = trip.vehicle.capacity if trip.vehicle else 0
+    return PublicTripResponse(
+        id=trip.id,
+        departure_station_name=trip.departure_station.name,
+        destination_station_name=trip.destination_station.name,
+        departure_time=trip.departure_time.isoformat(),
+        vehicle_capacity=capacity,
+        available_seat_count=max(0, capacity - active_seats),
+        price_ghs=float(trip.price_ticket_base) if trip.price_ticket_base else None,
+        company_name=trip.company.name,
+        brand_color=trip.company.brand_color,
+        booking_open=trip.booking_open,
+    )
 
 
 @router.get("/trips/{trip_id}/seats", response_model=SeatMapResponse)
@@ -187,6 +342,17 @@ async def get_seat_map(
     trip = trip_result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    # Lazily cancel expired holds for the whole trip before computing taken seats
+    await db.execute(
+        update(Ticket)
+        .where(
+            Ticket.trip_id == trip_id,
+            Ticket.payment_status == PaymentStatus.pending,
+            Ticket.booking_expires_at < func.now(),
+        )
+        .values(status=TicketStatus.cancelled)
+    )
 
     tickets_result = await db.execute(
         select(Ticket.seat_number).where(
@@ -275,11 +441,15 @@ async def book_ticket(
     email = body.passenger_email or f"{ticket.passenger_phone}@routepass.app"
     reference = f"RP-{ticket.id}-{uuid4().hex[:8]}"
     amount_pesewas = int(float(trip.price_ticket_base) * 100)
+    callback_url = f"{settings.public_app_url}/payment/success?reference={reference}"
+    cancel_action = f"{settings.public_app_url}/payment/cancelled"
 
     data = await initialize_transaction(
         amount_kobo=amount_pesewas,
         email=email,
         reference=reference,
+        callback_url=callback_url,
+        cancel_action=cancel_action,
     )
 
     ticket.payment_ref = reference
@@ -293,8 +463,11 @@ async def book_ticket(
 
 
 @router.get("/tickets/{ticket_id}", response_model=PublicTicketResponse)
+@limiter.limit("30/minute")
 async def get_public_ticket(
+    request: Request,
     ticket_id: int,
+    payment_ref: str = Query(..., description="Payment reference from booking"),
     db: AsyncSession = Depends(get_db_public),
 ):
     """Passenger polls this after returning from Paystack payment flow."""
@@ -308,7 +481,7 @@ async def get_public_ticket(
         )
     )
     ticket = result.scalar_one_or_none()
-    if ticket is None:
+    if ticket is None or ticket.payment_ref != payment_ref:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
@@ -330,3 +503,79 @@ async def get_public_ticket(
         company_name=company.name if company else None,
         brand_color=company.brand_color if company else None,
     )
+
+
+@router.post("/payments/{reference}/verify", response_model=PublicTicketResponse)
+@limiter.limit("20/minute")
+async def verify_payment(
+    request: Request,
+    reference: str,
+    db: AsyncSession = Depends(get_db_public),
+):
+    """
+    Called by the payment success page when the passenger returns from Paystack.
+    Verifies the transaction directly with Paystack and marks the ticket paid
+    if confirmed — without waiting for the async webhook to arrive.
+    Safe to call multiple times (idempotent).
+    """
+    result = await db.execute(select(Ticket).where(Ticket.payment_ref == reference))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.payment_status != PaymentStatus.paid:
+        data = await verify_transaction(reference)
+        if data.get("status") == "success":
+            ticket.payment_status = PaymentStatus.paid
+            ticket.booking_expires_at = None
+            await db.commit()
+            await db.refresh(ticket)
+
+    # Re-query with relationships for the response
+    result2 = await db.execute(
+        select(Ticket)
+        .where(Ticket.id == ticket.id)
+        .options(
+            selectinload(Ticket.trip).selectinload(Trip.departure_station),
+            selectinload(Ticket.trip).selectinload(Trip.destination_station),
+            selectinload(Ticket.trip).selectinload(Trip.vehicle),
+        )
+    )
+    ticket = result2.scalar_one()
+    company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
+    company = company_result.scalar_one_or_none()
+
+    return PublicTicketResponse(
+        id=ticket.id,
+        passenger_name=ticket.passenger_name,
+        seat_number=ticket.seat_number,
+        fare_ghs=float(ticket.fare_ghs),
+        status=ticket.status,
+        payment_status=ticket.payment_status,
+        departure_station=ticket.trip.departure_station.name if ticket.trip else None,
+        destination_station=ticket.trip.destination_station.name if ticket.trip else None,
+        departure_time=ticket.trip.departure_time.isoformat() if ticket.trip else None,
+        vehicle_plate=(
+            ticket.trip.vehicle.plate_number if ticket.trip and ticket.trip.vehicle else None
+        ),
+        company_name=company.name if company else None,
+        brand_color=company.brand_color if company else None,
+    )
+
+
+@router.get("/tickets/{ticket_id}/qr")
+@limiter.limit("20/minute")
+async def get_public_ticket_qr(
+    request: Request,
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db_public),
+):
+    """Return a PNG QR code for a paid ticket (no auth required)."""
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None or ticket.payment_status != PaymentStatus.paid:
+        raise HTTPException(status_code=404, detail="Ticket not found or not yet paid")
+
+    payload = f"TICKET:{ticket.id}:{ticket.trip_id}:{ticket.seat_number}"
+    png_bytes = generate_qr_png_bytes(payload)
+    return Response(content=png_bytes, media_type="image/png")

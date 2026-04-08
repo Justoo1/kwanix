@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { PlusCircle, Wrench } from "lucide-react";
+import { PlusCircle, Wrench, TrendingUp } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { clientFetch } from "@/lib/client-api";
@@ -381,6 +381,74 @@ function CreateVehicleDialog({
   );
 }
 
+// ── Vehicle utilisation section (company_admin only) ─────────────────────────
+
+interface VehicleUtilisationItem {
+  vehicle_id: number;
+  plate_number: string;
+  trips_total: number;
+  trips_last_30_days: number;
+  avg_occupancy_pct: number;
+  total_revenue_ghs: number;
+  is_available: boolean;
+}
+
+function UtilisationSection() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["vehicle-utilisation"],
+    queryFn: () => clientFetch<VehicleUtilisationItem[]>("admin/vehicles/utilisation"),
+  });
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-zinc-200">
+        <TrendingUp className="h-4 w-4 text-zinc-500" />
+        <h2 className="text-sm font-semibold text-zinc-700">Fleet Utilisation</h2>
+      </div>
+      {isLoading ? (
+        <p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>
+      ) : !data || data.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-muted-foreground">No vehicles found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                <th className="px-5 py-3 text-left">Plate</th>
+                <th className="px-5 py-3 text-right">Total Trips</th>
+                <th className="px-5 py-3 text-right">Last 30 Days</th>
+                <th className="px-5 py-3 text-right">Avg Occupancy</th>
+                <th className="px-5 py-3 text-right">Revenue (GHS)</th>
+                <th className="px-5 py-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((v) => (
+                <tr key={v.vehicle_id} className="border-b border-zinc-100 last:border-0 hover:bg-white/60">
+                  <td className="px-5 py-3 font-mono font-semibold text-zinc-800">{v.plate_number}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{v.trips_total}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{v.trips_last_30_days}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{v.avg_occupancy_pct}%</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{v.total_revenue_ghs.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-center">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                      v.is_available
+                        ? "bg-sky-50 text-sky-700 ring-sky-200"
+                        : "bg-red-50 text-red-700 ring-red-200"
+                    }`}>
+                      {v.is_available ? "Available" : "Out of service"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 interface VehiclesViewProps {
@@ -418,8 +486,11 @@ export function VehiclesView({ canCreate, canManage }: VehiclesViewProps) {
         )}
       </div>
 
-      {/* Table */}
+      {/* Fleet table */}
       <DataTable columns={columns} data={data ?? []} isLoading={isLoading} />
+
+      {/* Utilisation stats — company_admin only */}
+      {canCreate && <UtilisationSection />}
 
       {/* Dialogs */}
       {canCreate && (

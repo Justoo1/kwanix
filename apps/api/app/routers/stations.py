@@ -18,6 +18,7 @@ class CreateStationRequest(BaseModel):
     location_code: str | None = None
     contact_number: str | None = None
     address: str | None = None
+    city: str | None = None
     is_hub: bool = False
 
 
@@ -27,6 +28,7 @@ class StationResponse(BaseModel):
     location_code: str | None
     contact_number: str | None
     address: str | None
+    city: str | None = None
     is_hub: bool
     is_active: bool
 
@@ -74,6 +76,7 @@ async def create_station(
         location_code=body.location_code,
         contact_number=body.contact_number,
         address=body.address,
+        city=body.city,
         is_hub=body.is_hub,
     )
     db.add(station)
@@ -84,11 +87,17 @@ async def create_station(
 
 @router.get("", response_model=list[StationResponse])
 async def list_stations(
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Station).where(Station.is_active == True).order_by(Station.name)  # noqa: E712
+        select(Station)
+        .where(Station.is_active == True)  # noqa: E712
+        .order_by(Station.name)
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 

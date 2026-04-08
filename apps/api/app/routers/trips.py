@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
+from app.integrations.arkesel import msg_trip_arrived, msg_trip_departed, send_sms
 from app.integrations.email import send_manifest_email
 from app.models.company import Company
 from app.models.parcel import Parcel, ParcelStatus
@@ -68,6 +69,8 @@ class TripResponse(BaseModel):
     destination_station_name: str | None = None
     parcel_count: int = 0
     tickets_sold: int = 0
+    occupancy_pct: float = 0.0
+    is_near_full: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +89,8 @@ class TripResponse(BaseModel):
             "status": data.status,
             "booking_open": getattr(data, "booking_open", False),
             "price_ticket_base": getattr(data, "price_ticket_base", None),
+            "occupancy_pct": 0.0,
+            "is_near_full": False,
         }
         try:
             result["vehicle_plate"] = data.vehicle.plate_number
@@ -107,9 +112,13 @@ class TripResponse(BaseModel):
         try:
             from app.models.ticket import TicketStatus
 
-            result["tickets_sold"] = sum(
-                1 for t in data.tickets if t.status != TicketStatus.cancelled
-            )
+            tickets_sold = sum(1 for t in data.tickets if t.status != TicketStatus.cancelled)
+            result["tickets_sold"] = tickets_sold
+            cap = result.get("vehicle_capacity")
+            if cap and cap > 0:
+                occ = (tickets_sold / cap) * 100
+                result["occupancy_pct"] = round(occ, 1)
+                result["is_near_full"] = occ >= 80.0
         except Exception as exc:
             logger.debug("tickets not loaded on trip", trip_id=data.id, error=str(exc))
         return result
@@ -254,13 +263,15 @@ async def generate_schedule(
 @router.get("", response_model=list[TripResponse])
 async def list_trips(
     status: TripStatus | None = Query(None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
     q = select(Trip).options(*_TRIP_OPTS).order_by(Trip.departure_time.desc())
     if status is not None:
         q = q.where(Trip.status == status)
-    result = await db.execute(q)
+    result = await db.execute(q.limit(limit).offset(offset))
     return result.scalars().all()
 
 
@@ -363,6 +374,18 @@ async def get_trip(
     return await _get_trip_or_404(trip_id, db)
 
 
+async def _sms_passengers(trip: Trip, message: str) -> None:
+    """Fire-and-forget SMS to all non-cancelled passengers on a trip."""
+    import contextlib
+
+    from app.models.ticket import TicketStatus as TS  # local to avoid circular imports
+
+    for ticket in getattr(trip, "tickets", []):
+        if ticket.status != TS.cancelled:
+            with contextlib.suppress(Exception):
+                await send_sms(ticket.passenger_phone, message, event_type="trip_status")
+
+
 @router.patch(
     "/{trip_id}/status",
     response_model=TripResponse,
@@ -371,6 +394,7 @@ async def get_trip(
 async def update_trip_status(
     trip_id: int,
     body: UpdateTripStatusRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
@@ -416,9 +440,27 @@ async def update_trip_status(
                 company_name=company.name if company else None,
                 brand_color=company.brand_color if company else None,
             )
-            send_manifest_email(trip_id, pdf_bytes)
+            await send_manifest_email(trip_id, pdf_bytes)
         except Exception as exc:  # noqa: BLE001
             logger.error("manifest email step failed", trip_id=trip_id, error=str(exc))
+
+        # SMS passengers: bus has departed
+        plate = updated_trip.vehicle.plate_number if updated_trip.vehicle else "the bus"
+        from_name = (
+            updated_trip.departure_station.name if updated_trip.departure_station else "origin"
+        )
+        sms_msg = msg_trip_departed(plate, from_name)
+        background_tasks.add_task(_sms_passengers, updated_trip, sms_msg)
+
+    elif body.status == TripStatus.arrived:
+        # SMS passengers: bus has arrived
+        dest_name = (
+            updated_trip.destination_station.name
+            if updated_trip.destination_station
+            else "destination"
+        )
+        sms_msg = msg_trip_arrived(dest_name)
+        background_tasks.add_task(_sms_passengers, updated_trip, sms_msg)
 
     return updated_trip
 

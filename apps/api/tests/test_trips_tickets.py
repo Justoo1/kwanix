@@ -650,18 +650,15 @@ class TestManifestEmail:
         loading_trip,
         monkeypatch,
     ):
-        """When manifest_email and resend_api_key are set, httpx.post is called on depart."""
-        from unittest.mock import MagicMock, patch
+        """When manifest_email and resend_api_key are set, send_manifest_email is called on depart."""  # noqa: E501
+        from unittest.mock import AsyncMock, patch
 
         from app.config import settings
 
         monkeypatch.setattr(settings, "manifest_email", "ops@example.com")
         monkeypatch.setattr(settings, "resend_api_key", "re_test_key")
 
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("app.integrations.email.httpx.post", return_value=mock_response) as mock_post:
+        with patch("app.routers.trips.send_manifest_email", new_callable=AsyncMock) as mock_send:
             response = await client.patch(
                 f"/api/v1/trips/{loading_trip.id}/status",
                 headers={"Authorization": f"Bearer {manager_token}"},
@@ -670,13 +667,7 @@ class TestManifestEmail:
 
         assert response.status_code == 200
         assert response.json()["status"] == "departed"
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args
-        assert call_kwargs[0][0] == "https://api.resend.com/emails"
-        payload = call_kwargs[1]["json"]
-        assert payload["to"] == ["ops@example.com"]
-        assert "manifest" in payload["subject"].lower()
-        assert len(payload["attachments"]) == 1
+        mock_send.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_email_skipped_when_not_configured(

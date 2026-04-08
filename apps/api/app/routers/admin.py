@@ -16,7 +16,7 @@ import traceback
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +53,8 @@ class CompanyResponse(BaseModel):
     brand_color: str | None
     is_active: bool
     api_key_prefix: str | None = None  # first 8 chars of api_key, never full key
+    max_parcel_weight_kg: float | None = None
+    sla_threshold_days: int = 2
 
     model_config = {"from_attributes": True}
 
@@ -67,11 +69,18 @@ class CompanyResponse(BaseModel):
             brand_color=company.brand_color,
             is_active=company.is_active,
             api_key_prefix=prefix,
+            max_parcel_weight_kg=company.max_parcel_weight_kg,
+            sla_threshold_days=company.sla_threshold_days,
         )
 
 
 class CompanyUpdate(BaseModel):
     brand_color: str | None = None
+    max_parcel_weight_kg: float | None = None
+
+
+class CompanySettings(BaseModel):
+    sla_threshold_days: int
 
 
 class UserCreate(BaseModel):
@@ -150,8 +159,12 @@ async def create_company(
     response_model=list[CompanyResponse],
     dependencies=[Depends(require_role(UserRole.super_admin))],
 )
-async def list_companies(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).order_by(Company.name))
+async def list_companies(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Company).order_by(Company.name).limit(limit).offset(offset))
     return result.scalars().all()
 
 
@@ -264,9 +277,37 @@ async def update_my_company(
         raise HTTPException(status_code=404, detail="Company not found.")
     if body.brand_color is not None:
         company.brand_color = body.brand_color
+    if body.max_parcel_weight_kg is not None:
+        company.max_parcel_weight_kg = body.max_parcel_weight_kg
     await db.commit()
     await db.refresh(company)
-    return company
+    return CompanyResponse.from_orm_with_prefix(company)
+
+
+@router.patch(
+    "/company/settings",
+    response_model=CompanyResponse,
+    dependencies=[Depends(require_role(UserRole.company_admin))],
+)
+async def update_company_settings(
+    body: CompanySettings,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.company_admin)),
+):
+    """Update configurable company settings (e.g. SLA threshold)."""
+    if not (1 <= body.sla_threshold_days <= 30):
+        raise HTTPException(
+            status_code=400,
+            detail="sla_threshold_days must be between 1 and 30",
+        )
+    result = await db.execute(select(Company).where(Company.id == current_user.company_id))
+    company = result.scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    company.sla_threshold_days = body.sla_threshold_days
+    await db.commit()
+    await db.refresh(company)
+    return CompanyResponse.from_orm_with_prefix(company)
 
 
 # ── User endpoints (company_admin+) ───────────────────────────────────────────
@@ -344,6 +385,8 @@ async def create_user(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(
@@ -353,10 +396,16 @@ async def list_users(
     ),
 ):
     if current_user.role == UserRole.super_admin:
-        result = await db.execute(select(User).order_by(User.company_id, User.full_name))
+        result = await db.execute(
+            select(User).order_by(User.company_id, User.full_name).limit(limit).offset(offset)
+        )
     else:
         result = await db.execute(
-            select(User).where(User.company_id == current_user.company_id).order_by(User.full_name)
+            select(User)
+            .where(User.company_id == current_user.company_id)
+            .order_by(User.full_name)
+            .limit(limit)
+            .offset(offset)
         )
     return result.scalars().all()
 
@@ -845,6 +894,235 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     )
 
 
+# ── Vehicle utilisation report (company_admin+) ───────────────────────────────
+
+
+class VehicleUtilisationItem(BaseModel):
+    vehicle_id: int
+    plate_number: str
+    trips_total: int
+    trips_last_30_days: int
+    avg_occupancy_pct: float
+    total_revenue_ghs: float
+    is_available: bool
+
+
+@router.get(
+    "/vehicles/utilisation",
+    response_model=list[VehicleUtilisationItem],
+)
+async def get_vehicle_utilisation(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Return utilisation stats per vehicle for the company (last 30 days highlighted)."""
+    from app.models.ticket import TicketStatus
+    from app.models.trip import Trip
+    from app.models.vehicle import Vehicle
+
+    now = datetime.now(UTC)
+    thirty_days_ago = now - timedelta(days=30)
+
+    stmt = select(Vehicle).options(
+        selectinload(Vehicle.trips).selectinload(Trip.tickets),
+    )
+    if current_user.role == UserRole.company_admin:
+        stmt = stmt.where(Vehicle.company_id == current_user.company_id)
+
+    result = await db.execute(stmt)
+    vehicles = result.scalars().all()
+
+    items = []
+    for v in vehicles:
+        trips_last_30 = 0
+        occupancy_sum = 0.0
+        trips_with_capacity = 0
+        revenue = 0.0
+
+        for trip in v.trips:
+            dt = trip.departure_time
+            if dt is not None:
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                if dt >= thirty_days_ago:
+                    trips_last_30 += 1
+
+            active_tickets = [t for t in trip.tickets if t.status != TicketStatus.cancelled]
+            revenue += sum(float(t.fare_ghs) for t in active_tickets)
+
+            if v.capacity:
+                occupancy_sum += len(active_tickets) / v.capacity * 100
+                trips_with_capacity += 1
+
+        avg_occ = round(occupancy_sum / trips_with_capacity, 1) if trips_with_capacity else 0.0
+
+        items.append(
+            VehicleUtilisationItem(
+                vehicle_id=v.id,
+                plate_number=v.plate_number,
+                trips_total=len(v.trips),
+                trips_last_30_days=trips_last_30,
+                avg_occupancy_pct=avg_occ,
+                total_revenue_ghs=round(revenue, 2),
+                is_available=v.is_available,
+            )
+        )
+
+    return sorted(items, key=lambda x: x.trips_total, reverse=True)
+
+
+# ── Station performance dashboard (company_admin+) ────────────────────────────
+
+
+class StationPerformanceItem(BaseModel):
+    station_id: int
+    station_name: str
+    parcels_originated: int
+    parcels_arrived: int
+    trips_departed: int
+    revenue_ghs: float
+
+
+@router.get(
+    "/stations/performance",
+    response_model=list[StationPerformanceItem],
+)
+async def get_stations_performance(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Return 30-day throughput stats per station for the company."""
+    from app.models.parcel import Parcel, ParcelStatus
+    from app.models.station import Station
+    from app.models.ticket import Ticket, TicketStatus
+    from app.models.trip import Trip, TripStatus
+
+    now = datetime.now(UTC)
+    thirty_days_ago = now - timedelta(days=30)
+
+    stations_stmt = select(Station)
+    if current_user.role == UserRole.company_admin:
+        stations_stmt = stations_stmt.where(Station.company_id == current_user.company_id)
+    stations_result = await db.execute(stations_stmt)
+    stations = stations_result.scalars().all()
+
+    items = []
+    for s in stations:
+        # Parcels that originated here in last 30 days
+        orig_q = (
+            select(func.count())
+            .select_from(Parcel)
+            .where(
+                Parcel.origin_station_id == s.id,
+                Parcel.created_at >= thirty_days_ago,
+            )
+        )
+        parcels_originated = (await db.execute(orig_q)).scalar_one()
+
+        # Parcels that arrived at this station in last 30 days
+        arr_q = (
+            select(func.count())
+            .select_from(Parcel)
+            .where(
+                Parcel.destination_station_id == s.id,
+                Parcel.status.in_([ParcelStatus.arrived, ParcelStatus.picked_up]),
+                Parcel.arrived_at >= thirty_days_ago,
+            )
+        )
+        parcels_arrived = (await db.execute(arr_q)).scalar_one()
+
+        # Trips that departed from this station in last 30 days
+        dep_q = (
+            select(func.count())
+            .select_from(Trip)
+            .where(
+                Trip.departure_station_id == s.id,
+                Trip.status == TripStatus.departed,
+                Trip.departure_time >= thirty_days_ago,
+            )
+        )
+        trips_departed = (await db.execute(dep_q)).scalar_one()
+
+        # Revenue: sum of non-cancelled ticket fares for trips departing from this station
+        rev_q = (
+            select(func.sum(Ticket.fare_ghs))
+            .join(Trip, Trip.id == Ticket.trip_id)
+            .where(
+                Trip.departure_station_id == s.id,
+                Trip.departure_time >= thirty_days_ago,
+                Ticket.status != TicketStatus.cancelled,
+            )
+        )
+        revenue = (await db.execute(rev_q)).scalar_one()
+
+        items.append(
+            StationPerformanceItem(
+                station_id=s.id,
+                station_name=s.name,
+                parcels_originated=parcels_originated,
+                parcels_arrived=parcels_arrived,
+                trips_departed=trips_departed,
+                revenue_ghs=round(float(revenue or 0), 2),
+            )
+        )
+
+    return sorted(items, key=lambda x: x.parcels_originated, reverse=True)
+
+
+# ── Audit log viewer (company_admin+) ─────────────────────────────────────────
+
+
+class AuditLogEntry(BaseModel):
+    id: int
+    parcel_tracking_number: str | None
+    clerk_name: str | None
+    previous_status: str | None
+    new_status: str
+    note: str | None
+    occurred_at: datetime
+
+
+@router.get(
+    "/audit-log",
+    response_model=list[AuditLogEntry],
+)
+async def get_audit_log(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Return the 100 most recent parcel audit log entries for the company."""
+    from app.models.parcel import Parcel, ParcelLog
+
+    stmt = (
+        select(ParcelLog)
+        .join(ParcelLog.parcel)
+        .options(
+            selectinload(ParcelLog.parcel),
+            selectinload(ParcelLog.clerk),
+        )
+        .order_by(ParcelLog.occurred_at.desc())
+        .limit(100)
+    )
+    if current_user.role == UserRole.company_admin:
+        stmt = stmt.where(Parcel.company_id == current_user.company_id)
+
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+
+    return [
+        AuditLogEntry(
+            id=log.id,
+            parcel_tracking_number=log.parcel.tracking_number if log.parcel else None,
+            clerk_name=log.clerk.full_name if log.clerk else None,
+            previous_status=log.previous_status,
+            new_status=log.new_status,
+            note=log.note,
+            occurred_at=log.occurred_at,
+        )
+        for log in logs
+    ]
+
+
 # ── Parcel delivery SLA report (company_admin+) ────────────────────────────────
 
 
@@ -870,6 +1148,16 @@ async def send_sla_email(
     now = datetime.now(UTC)
     seven_days_ago = now - timedelta(days=7)
 
+    # Load company to get the configurable SLA threshold
+    sla_days = 2  # fallback for super_admin (cross-company view)
+    if current_user.role == UserRole.company_admin:
+        company_result = await db.execute(
+            select(Company).where(Company.id == current_user.company_id)
+        )
+        company_obj = company_result.scalar_one_or_none()
+        if company_obj is not None:
+            sla_days = company_obj.sla_threshold_days
+
     stmt = select(Parcel).where(
         Parcel.created_at >= seven_days_ago,
         Parcel.status.in_([ParcelStatus.arrived, ParcelStatus.picked_up]),
@@ -881,16 +1169,17 @@ async def send_sla_email(
     result = await db.execute(stmt)
     parcels = result.scalars().all()
 
+    threshold_seconds = sla_days * 24 * 3600
     total = len(parcels)
     on_time = sum(
         1
         for p in parcels
-        if p.arrived_at and (p.arrived_at - p.created_at).total_seconds() <= 48 * 3600
+        if p.arrived_at and (p.arrived_at - p.created_at).total_seconds() <= threshold_seconds
     )
     late = total - on_time
     on_time_pct = round(on_time / total * 100, 1) if total > 0 else 0.0
 
-    send_sla_report_email(
+    await send_sla_report_email(
         to_email=current_user.email,
         total=total,
         on_time=on_time,

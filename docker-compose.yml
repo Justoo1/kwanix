@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: routpass
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: routpass_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U routpass -d routpass_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,27 +29,55 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # routpass_app is a non-superuser role subject to RLS — used by the live app.
-      # Migrations use routpass (superuser) via alembic.ini / DATABASE_ADMIN_URL.
-      DATABASE_URL: postgresql+asyncpg://routpass_app:secret_app@postgres:5432/routpass_db
-      DATABASE_ADMIN_URL: postgresql+asyncpg://routpass:secret@postgres:5432/routpass_db
-      JWT_SECRET_KEY: dev-secret-key-change-in-production
-      JWT_ALGORITHM: HS256
+      # routpass_app is the non-superuser RLS role used by the live app.
+      # Migrations use routpass (superuser) via DATABASE_ADMIN_URL.
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       ARKESEL_API_KEY: ${ARKESEL_API_KEY:-}
       ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-RoutePass}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
-      ENVIRONMENT: development
-      DEBUG: "true"
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
     volumes:
-      # Mount source for hot-reload
       - ./apps/api:/app
-      # Mount infrastructure scripts so seed_db.py is accessible
       - ./infrastructure:/infrastructure
     depends_on:
       postgres:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      # Only build the 'deps' stage (npm ci) — fast, correct node version,
+      # no full production bundle needed for dev. Source is mounted below.
+      target: deps
+    working_dir: /app
+    # Run npm install at startup so package.json changes are picked up
+    # on `make restart-web` without a full rebuild.
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    environment:
+      API_INTERNAL_URL: ${API_INTERNAL_URL}
+      # Browser requests use the host-exposed port via NEXT_PUBLIC_.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      NODE_ENV: ${NODE_ENV:-development}
+      # Force polling so file-change events reach Next.js inside the container.
+      # Required on WSL2 + Docker Desktop where inotify events are unreliable.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   redis_data:
+  web_node_modules:

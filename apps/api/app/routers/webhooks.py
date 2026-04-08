@@ -7,8 +7,6 @@ Failed payloads are persisted to webhook_events for later replay.
 """
 
 import contextlib
-import hashlib
-import hmac
 import json
 import traceback
 from datetime import UTC, datetime
@@ -21,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.integrations.email import send_ticket_email
+from app.integrations.paystack import verify_paystack_signature
 from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.payment_event import PaymentEvent
@@ -81,7 +80,7 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
                         f"{trip_obj.departure_station.name} → {trip_obj.destination_station.name}"
                     )
                     departure_str = trip_obj.departure_time.strftime("%d %b %Y %H:%M")
-                    send_ticket_email(
+                    await send_ticket_email(
                         passenger_name=ticket.passenger_name,
                         passenger_email=ticket.passenger_email,
                         trip_route=route,
@@ -118,13 +117,7 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
     signature = request.headers.get("x-paystack-signature", "")
     body_bytes = await request.body()
 
-    expected = hmac.new(
-        settings.paystack_secret_key.encode(),
-        body_bytes,
-        hashlib.sha512,
-    ).hexdigest()
-
-    if not hmac.compare_digest(expected, signature):
+    if not verify_paystack_signature(body_bytes, signature, settings.paystack_secret_key):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
 
     payload = json.loads(body_bytes)

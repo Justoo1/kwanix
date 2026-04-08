@@ -1,4 +1,4 @@
-"""Email integration via Resend REST API — uses httpx (already a dependency)."""
+"""Email integration via Resend REST API — uses httpx.AsyncClient."""
 
 import base64
 
@@ -12,7 +12,7 @@ logger = structlog.get_logger()
 RESEND_API_URL = "https://api.resend.com/emails"
 
 
-def send_sla_report_email(
+async def send_sla_report_email(
     to_email: str | None,
     total: int,
     on_time: int,
@@ -47,15 +47,15 @@ def send_sla_report_email(
             "text": body,
         }
 
-        response = httpx.post(
-            RESEND_API_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {settings.resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                RESEND_API_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         logger.info("SLA report email sent via Resend", to=to_email)
 
@@ -63,7 +63,7 @@ def send_sla_report_email(
         logger.error("failed to send SLA report email", to=to_email, error=str(exc))
 
 
-def send_ticket_email(
+async def send_ticket_email(
     passenger_name: str,
     passenger_email: str,
     trip_route: str,
@@ -118,15 +118,15 @@ def send_ticket_email(
             "html": html_body,
         }
 
-        response = httpx.post(
-            RESEND_API_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {settings.resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                RESEND_API_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         logger.info("ticket receipt email sent", to=passenger_email)
 
@@ -134,7 +134,7 @@ def send_ticket_email(
         logger.error("failed to send ticket receipt email", to=passenger_email, error=str(exc))
 
 
-def send_manifest_email(trip_id: int, pdf_bytes: bytes) -> None:
+async def send_manifest_email(trip_id: int, pdf_bytes: bytes) -> None:
     """Send the trip manifest PDF to settings.manifest_email via Resend.
 
     Silently skips if RESEND_API_KEY or manifest_email is not configured.
@@ -161,15 +161,15 @@ def send_manifest_email(trip_id: int, pdf_bytes: bytes) -> None:
             ],
         }
 
-        response = httpx.post(
-            RESEND_API_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {settings.resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                RESEND_API_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         logger.info("manifest email sent via Resend", trip_id=trip_id, to=settings.manifest_email)
 

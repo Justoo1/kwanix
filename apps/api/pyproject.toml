@@ -26,6 +26,7 @@ dependencies = [
     "structlog>=24.2.0",
     "python-multipart>=0.0.9",
     "slowapi>=0.1.9",
+    "sentry-sdk[fastapi]>=2.0.0",
 ]
 
 [project.optional-dependencies]

@@ -3,9 +3,11 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
+import { getSession } from "@/lib/session";
 import CancelButton from "./cancel-button";
 import PrintButton from "./print-button";
 import QrButton from "./qr-button";
+import RefundButton from "./refund-button";
 import ShareButton from "./share-button";
 
 interface TicketDetail {
@@ -42,11 +44,15 @@ export default async function TicketDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ticket = await apiFetch<TicketDetail>(`/api/v1/tickets/${id}`).catch(
-    () => null
-  );
+  const [ticket, session] = await Promise.all([
+    apiFetch<TicketDetail>(`/api/v1/tickets/${id}`).catch(() => null),
+    getSession(),
+  ]);
 
   if (!ticket) notFound();
+
+  const isCompanyAdmin =
+    session?.user.role === "company_admin" || session?.user.role === "super_admin";
 
   const accent = ticket.brand_color ?? "#1d4ed8";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -94,6 +100,9 @@ export default async function TicketDetailPage({
             ticketUrl={ticketUrl}
           />
           <PrintButton />
+          {isCompanyAdmin && ticket.payment_status !== "refunded" && (
+            <RefundButton ticketId={ticket.id} />
+          )}
           {ticket.status !== "cancelled" && (
             <CancelButton ticketId={ticket.id} />
           )}

@@ -59,6 +59,7 @@ class Ticket(Base, TimestampMixin):
     reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    refund_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Relationships
     trip: Mapped["Trip"] = relationship(back_populates="tickets")  # noqa: F821

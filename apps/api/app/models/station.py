@@ -18,6 +18,7 @@ class Station(Base, TimestampMixin):
     search_aliases: Mapped[list[str] | None] = mapped_column(JSON)
     contact_number: Mapped[str | None] = mapped_column(String(20))
     address: Mapped[str | None] = mapped_column(String(255))
+    city: Mapped[str | None] = mapped_column(String(100))
     is_hub: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -46,7 +46,7 @@ async def track_parcel(request: Request, tracking_id: str, db: AsyncSession = De
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracking ID not found")
 
     bus_plate = None
-    if parcel.current_trip and parcel.status == ParcelStatus.in_transit:
+    if parcel.current_trip and parcel.status == ParcelStatus.arrived:
         bus_plate = parcel.current_trip.vehicle.plate_number
 
     return PublicParcelStatus(

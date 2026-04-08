@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.integrations.paystack import verify_paystack_signature
 from app.models.payment_event import PaymentEvent
 from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip, TripStatus
@@ -428,3 +429,109 @@ class TestWebhookRetryQueue:
         assert "replayed" in body
         assert "failed" in body
         assert "skipped" in body
+
+
+# ── Unit tests: verify_paystack_signature ─────────────────────────────────────
+
+
+class TestVerifyPaystackSignature:
+    """Unit tests for the HMAC-SHA512 signature helper."""
+
+    def _sign(self, body: str, secret: str = "testsecret") -> str:
+        return _hmac.new(secret.encode(), body.encode(), hashlib.sha512).hexdigest()
+
+    def test_valid_signature_returns_true(self):
+        body = b'{"event":"charge.success"}'
+        sig = _hmac.new(b"testsecret", body, hashlib.sha512).hexdigest()
+        assert verify_paystack_signature(body, sig, "testsecret") is True
+
+    def test_wrong_secret_returns_false(self):
+        body = b'{"event":"charge.success"}'
+        sig = _hmac.new(b"correctsecret", body, hashlib.sha512).hexdigest()
+        assert verify_paystack_signature(body, sig, "wrongsecret") is False
+
+    def test_tampered_body_returns_false(self):
+        body = b'{"event":"charge.success"}'
+        sig = _hmac.new(b"testsecret", body, hashlib.sha512).hexdigest()
+        assert verify_paystack_signature(b'{"event":"charge.failed"}', sig, "testsecret") is False
+
+    def test_empty_signature_returns_false(self):
+        body = b'{"event":"charge.success"}'
+        assert verify_paystack_signature(body, "", "testsecret") is False
+
+
+# ── Unit tests: initialize_transaction payload ────────────────────────────────
+
+
+class TestInitializeTransactionPayload:
+    """Unit tests for cancel_action inclusion in Paystack payload."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_action_included_in_payload_when_provided(self):
+        captured: dict = {}
+
+        async def mock_post(url, **kwargs):
+            captured["payload"] = kwargs.get("json", {})
+            mock_response = MagicMock()
+            mock_response.is_success = True
+            mock_response.json.return_value = {
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/x",
+                    "access_code": "ac",
+                    "reference": "ref",
+                }
+            }
+            return mock_response
+
+        mock_client = AsyncMock()
+        mock_client.post = mock_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        from app.integrations.paystack import initialize_transaction
+
+        with patch("app.integrations.paystack.httpx.AsyncClient", return_value=mock_client):
+            await initialize_transaction(
+                amount_kobo=5000,
+                email="test@example.com",
+                reference="RP-1-testref",
+                cancel_action="https://app.routepass.com/payment/cancelled",
+            )
+
+        assert (
+            captured["payload"].get("cancel_action")
+            == "https://app.routepass.com/payment/cancelled"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_action_omitted_when_not_provided(self):
+        captured: dict = {}
+
+        async def mock_post(url, **kwargs):
+            captured["payload"] = kwargs.get("json", {})
+            mock_response = MagicMock()
+            mock_response.is_success = True
+            mock_response.json.return_value = {
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/x",
+                    "access_code": "ac",
+                    "reference": "ref",
+                }
+            }
+            return mock_response
+
+        mock_client = AsyncMock()
+        mock_client.post = mock_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        from app.integrations.paystack import initialize_transaction
+
+        with patch("app.integrations.paystack.httpx.AsyncClient", return_value=mock_client):
+            await initialize_transaction(
+                amount_kobo=5000,
+                email="test@example.com",
+                reference="RP-1-testref",
+            )
+
+        assert "cancel_action" not in captured["payload"]

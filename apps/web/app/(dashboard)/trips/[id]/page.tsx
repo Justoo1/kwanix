@@ -20,6 +20,7 @@ import StatusForm from "./status-form"
 import BookingToggle from "./booking-toggle"
 import ManifestDownloadButton from "./manifest-download-button"
 import ManifestCsvButton from "./manifest-csv-button"
+import BulkCancelButton from "./bulk-cancel-button"
 
 interface TripRevenue {
   total_revenue_ghs: number
@@ -304,13 +305,20 @@ export default async function TripDetailPage({
 
       {/* ── Ticket list ────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-100">
+        <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between gap-4">
           <h2 className="text-base font-medium text-zinc-800">
             Tickets
             <span className="ml-2 text-sm font-normal text-zinc-400">
               ({tickets.length})
             </span>
           </h2>
+          {canManage && (
+            <BulkCancelButton
+              ticketIds={tickets
+                .filter((t) => t.status !== "cancelled")
+                .map((t) => t.id)}
+            />
+          )}
         </div>
 
         {tickets.length === 0 ? (

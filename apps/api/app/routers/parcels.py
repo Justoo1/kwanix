@@ -1,7 +1,7 @@
 import contextlib
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_, select
@@ -17,6 +17,7 @@ from app.integrations.arkesel import (
     msg_parcel_pickup_reminder,
     msg_parcel_return_sender,
 )
+from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.parcel import Parcel, ParcelLog, ParcelStatus
 from app.models.user import User, UserRole
@@ -145,19 +146,39 @@ async def create_parcel(
         if existing_parcel := existing.scalar_one_or_none():
             return _parcel_to_response(existing_parcel)
 
+    # Load company for weight checks
+    company_result = await db.execute(select(Company).where(Company.id == current_user.company_id))
+    company_obj = company_result.scalar_one_or_none()
+
+    # Enforce max parcel weight guard
+    if (
+        body.weight_kg is not None
+        and company_obj is not None
+        and company_obj.max_parcel_weight_kg is not None
+        and body.weight_kg > company_obj.max_parcel_weight_kg
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "WEIGHT_EXCEEDED",
+                "max_kg": company_obj.max_parcel_weight_kg,
+                "provided_kg": body.weight_kg,
+            },
+        )
+
     # Auto-calculate fee from company weight tiers when fee is 0 and weight is given
     resolved_fee = body.fee_ghs
-    if resolved_fee == 0 and body.weight_kg is not None:
-        company_result = await db.execute(
-            select(Company).where(Company.id == current_user.company_id)
-        )
-        company_obj = company_result.scalar_one_or_none()
-        if company_obj and company_obj.weight_tiers:
-            for tier in company_obj.weight_tiers:
-                max_kg = tier.get("max_kg")
-                if max_kg is None or body.weight_kg <= max_kg:
-                    resolved_fee = float(tier.get("fee_ghs", 0))
-                    break
+    if (
+        resolved_fee == 0
+        and body.weight_kg is not None
+        and company_obj
+        and company_obj.weight_tiers
+    ):
+        for tier in company_obj.weight_tiers:
+            max_kg = tier.get("max_kg")
+            if max_kg is None or body.weight_kg <= max_kg:
+                resolved_fee = float(tier.get("fee_ghs", 0))
+                break
 
     tracking_number = await generate_tracking_number(
         db,
@@ -234,6 +255,7 @@ async def list_parcels(
                 Parcel.tracking_number.ilike(pattern),
                 Parcel.sender_name.ilike(pattern),
                 Parcel.receiver_name.ilike(pattern),
+                Parcel.receiver_phone.ilike(pattern),
             )
         )
     if origin_station_id is not None:
@@ -377,7 +399,9 @@ async def batch_unload_parcels(
 
 
 @router.post("/collect")
+@limiter.limit("5/minute")
 async def collect_parcel_endpoint(
+    request: Request,
     body: CollectParcelRequest,
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
@@ -641,6 +665,68 @@ async def get_parcel_receipt(
             "Content-Disposition": f'attachment; filename="receipt-{parcel.tracking_number}.pdf"'
         },
     )
+
+
+class ResendOtpResponse(BaseModel):
+    sent: bool
+
+
+@router.post(
+    "/{parcel_id}/resend-otp",
+    response_model=ResendOtpResponse,
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_clerk,
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
+async def resend_otp(
+    parcel_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Regenerate OTP and resend to receiver. Only valid when parcel status is 'arrived'."""
+    from app.services.otp_service import generate_otp
+
+    parcel = await get_parcel_or_404(db, parcel_id)
+
+    if parcel.status != ParcelStatus.arrived:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "NOT_ARRIVED",
+                "message": "OTP can only be resent for parcels that have arrived.",
+            },
+        )
+
+    otp_code, otp_expires_at = generate_otp()
+    parcel.otp_code = otp_code
+    parcel.otp_expires_at = otp_expires_at
+    parcel.otp_attempt_count = 0
+    await db.commit()
+    await db.refresh(parcel, ["destination_station"])
+
+    background_tasks.add_task(
+        dispatch_sms,
+        db,
+        parcel.id,
+        parcel.receiver_phone,
+        msg_parcel_arrived(
+            parcel.destination_station.name,
+            otp_code,
+            parcel.tracking_number,
+        ),
+        "parcel_arrived",
+        current_user.sms_opt_out,
+    )
+
+    return ResendOtpResponse(sent=True)
 
 
 class RemindResponse(BaseModel):

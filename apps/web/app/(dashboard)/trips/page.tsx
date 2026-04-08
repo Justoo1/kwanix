@@ -263,6 +263,11 @@ function TripRow({ trip, muted }: { trip: TripResponse; muted: boolean }) {
 
       {/* Status badges */}
       <div className="flex items-center gap-2 shrink-0">
+        {trip.is_near_full && (
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+            Near full
+          </span>
+        )}
         {trip.booking_open && (
           <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
             Booking open

@@ -24,6 +24,7 @@ export interface ParcelRow {
   loaded_at: string | null;
   arrived_at: string | null;
   collected_at: string | null;
+  declared_value_ghs: number | null;
   qr_code_base64?: string | null;
 }
 

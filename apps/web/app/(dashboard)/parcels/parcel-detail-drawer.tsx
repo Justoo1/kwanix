@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, ClipboardList, Download, Bell } from "lucide-react";
+import { X, ClipboardList, Download, Bell, RefreshCw } from "lucide-react";
 import { clientFetch } from "@/lib/client-api";
 import type { UserRole } from "@/lib/definitions";
 import type { ParcelRow } from "@/hooks/use-parcels";
@@ -55,6 +55,8 @@ export default function ParcelDetailDrawer({
   const [fetchedFor, setFetchedFor] = useState<number | null>(null);
   const [reminderSending, setReminderSending] = useState(false);
   const [reminderMsg, setReminderMsg] = useState<string | null>(null);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpMsg, setOtpMsg] = useState<string | null>(null);
   const canViewLogs = MANAGER_ROLES.includes(userRole);
 
   // Derived: loading if we have a parcel whose logs haven't arrived yet
@@ -142,6 +144,9 @@ export default function ParcelDetailDrawer({
                 <dl className="grid grid-cols-2 gap-3">
                   <Field label="Weight" value={parcel.weight_kg != null ? `${parcel.weight_kg} kg` : null} />
                   <Field label="Fee" value={`GHS ${Number(parcel.fee_ghs).toFixed(2)}`} />
+                  {parcel.declared_value_ghs != null && (
+                    <Field label="Declared Value" value={`GHS ${Number(parcel.declared_value_ghs).toFixed(2)}`} />
+                  )}
                   <Field label="Description" value={parcel.description} />
                   <Field
                     label="Logged"
@@ -195,40 +200,71 @@ export default function ParcelDetailDrawer({
                 </section>
               )}
 
-              {/* Pickup reminder — only for arrived parcels */}
+              {/* Pickup reminder + Resend OTP — only for arrived parcels */}
               {parcel.status === "arrived" && (
-                <section>
-                  <button
-                    disabled={reminderSending}
-                    onClick={async () => {
-                      setReminderSending(true);
-                      setReminderMsg(null);
-                      try {
-                        const res = await clientFetch<{ sms_sent: boolean }>(
-                          `parcels/${parcel.id}/remind`,
-                          { method: "POST" }
-                        );
-                        setReminderMsg(
-                          res.sms_sent
-                            ? "Reminder SMS sent to receiver."
-                            : "Reminder already sent recently — skipped."
-                        );
-                      } catch (err) {
-                        setReminderMsg(
-                          err instanceof Error ? err.message : "Failed to send reminder."
-                        );
-                      } finally {
-                        setReminderSending(false);
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
-                  >
-                    <Bell className="h-4 w-4" />
-                    {reminderSending ? "Sending…" : "Send Pickup Reminder"}
-                  </button>
-                  {reminderMsg && (
-                    <p className="mt-2 text-xs text-zinc-500">{reminderMsg}</p>
-                  )}
+                <section className="space-y-3">
+                  <div>
+                    <button
+                      disabled={reminderSending}
+                      onClick={async () => {
+                        setReminderSending(true);
+                        setReminderMsg(null);
+                        try {
+                          const res = await clientFetch<{ sms_sent: boolean }>(
+                            `parcels/${parcel.id}/remind`,
+                            { method: "POST" }
+                          );
+                          setReminderMsg(
+                            res.sms_sent
+                              ? "Reminder SMS sent to receiver."
+                              : "Reminder already sent recently — skipped."
+                          );
+                        } catch (err) {
+                          setReminderMsg(
+                            err instanceof Error ? err.message : "Failed to send reminder."
+                          );
+                        } finally {
+                          setReminderSending(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                    >
+                      <Bell className="h-4 w-4" />
+                      {reminderSending ? "Sending…" : "Send Pickup Reminder"}
+                    </button>
+                    {reminderMsg && (
+                      <p className="mt-2 text-xs text-zinc-500">{reminderMsg}</p>
+                    )}
+                  </div>
+                  <div>
+                    <button
+                      disabled={otpSending}
+                      onClick={async () => {
+                        setOtpSending(true);
+                        setOtpMsg(null);
+                        try {
+                          await clientFetch<{ sent: boolean }>(
+                            `parcels/${parcel.id}/resend-otp`,
+                            { method: "POST" }
+                          );
+                          setOtpMsg("New OTP sent to receiver.");
+                        } catch (err) {
+                          setOtpMsg(
+                            err instanceof Error ? err.message : "Failed to resend OTP."
+                          );
+                        } finally {
+                          setOtpSending(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      {otpSending ? "Sending…" : "Resend OTP"}
+                    </button>
+                    {otpMsg && (
+                      <p className="mt-2 text-xs text-zinc-500">{otpMsg}</p>
+                    )}
+                  </div>
                 </section>
               )}
 
@@ -250,7 +286,9 @@ export default function ParcelDetailDrawer({
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-semibold text-zinc-700">{entry.action}</span>
                             <span className="text-xs text-zinc-400">
-                              {new Intl.DateTimeFormat("en-GH", { dateStyle: "short", timeStyle: "short" }).format(new Date(entry.created_at))}
+                              {entry.created_at
+                                ? new Intl.DateTimeFormat("en-GH", { dateStyle: "short", timeStyle: "short" }).format(new Date(entry.created_at))
+                                : "—"}
                             </span>
                           </div>
                           {entry.actor_name && (
