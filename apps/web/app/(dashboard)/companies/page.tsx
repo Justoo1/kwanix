@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
@@ -5,6 +6,7 @@ import { getSession } from "@/lib/session";
 import type { CompanyResponse } from "@/lib/definitions";
 
 import CreateCompanyForm from "./create-company-form";
+import PlansManager from "./plans-manager";
 
 export default async function CompaniesPage() {
   const session = await getSession();
@@ -54,6 +56,7 @@ export default async function CompaniesPage() {
                 <th className="px-6 py-3 text-left font-medium">Code</th>
                 <th className="px-6 py-3 text-left font-medium">Subdomain</th>
                 <th className="px-6 py-3 text-left font-medium">Status</th>
+                <th className="px-6 py-3 text-left font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -79,12 +82,23 @@ export default async function CompaniesPage() {
                       {c.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
+                  <td className="px-6 py-4 text-right">
+                    <Link
+                      href={`/companies/${c.id}`}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      View →
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Subscription plan management */}
+      <PlansManager />
     </div>
   );
 }

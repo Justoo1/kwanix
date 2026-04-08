@@ -5,10 +5,12 @@ import { getSession } from "@/lib/session";
 import ApiKeyCard from "./api-key-card";
 import BrandColorForm from "./brand-color-form";
 import ChangePasswordCard from "./change-password-card";
+import InvoiceHistoryCard from "./invoice-history-card";
 import MaxWeightCard from "./max-weight-card";
 import SlaSettingsCard from "./sla-settings-card";
 import SmsCreditsCard from "./sms-credits-card";
 import SmsPreferencesCard from "./sms-preferences-card";
+import SubscriptionCard from "./subscription-card";
 import WeightTierCard from "./weight-tier-card";
 
 interface CompanyResponse {
@@ -34,6 +36,18 @@ interface UserMe {
   sms_opt_out: boolean;
 }
 
+interface SubscriptionStatus {
+  subscription_status: "trialing" | "active" | "grace" | "suspended" | "cancelled";
+  plan_name: string | null;
+  max_vehicles: number | null;
+  billing_cycle: "monthly" | "annual" | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+  has_payment_method: boolean;
+  has_subaccount: boolean;
+  billing_email: string | null;
+}
+
 export default async function SettingsPage() {
   const session = await getSession();
 
@@ -43,13 +57,16 @@ export default async function SettingsPage() {
 
   const isCompanyAdmin = session.user.role === "company_admin";
 
-  const [company, me, weightTiersData] = await Promise.all([
+  const [company, me, weightTiersData, subscriptionStatus] = await Promise.all([
     isCompanyAdmin
       ? apiFetch<CompanyResponse>("/api/v1/admin/companies/me").catch(() => null)
       : Promise.resolve(null),
     apiFetch<UserMe>("/api/v1/auth/me").catch(() => null),
     isCompanyAdmin
       ? apiFetch<WeightTiersResponse>("/api/v1/admin/companies/me/weight-tiers").catch(() => null)
+      : Promise.resolve(null),
+    isCompanyAdmin
+      ? apiFetch<SubscriptionStatus>("/api/v1/billing/status").catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -77,6 +94,13 @@ export default async function SettingsPage() {
       {/* Company admin sections */}
       {isCompanyAdmin && company && (
         <>
+          {/* Subscription & Billing — shown first for visibility */}
+          <div>
+            <h2 className="text-base font-medium text-zinc-800 mb-4">Subscription &amp; Billing</h2>
+            <SubscriptionCard initialStatus={subscriptionStatus} />
+            <InvoiceHistoryCard />
+          </div>
+
           <div className="rounded-xl border border-zinc-200 bg-white p-6 max-w-lg">
             <div className="mb-6">
               <h2 className="text-base font-medium text-zinc-800">Company info</h2>

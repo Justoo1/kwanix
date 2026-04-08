@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -17,11 +19,13 @@ if settings.sentry_dsn:
         environment=settings.environment,
         send_default_pii=False,
     )
+from app.database import SessionLocal
 from app.middleware.rate_limit import limiter
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import (
     admin,
     auth,
+    billing,
     parcels,
     public,
     stations,
@@ -31,6 +35,7 @@ from app.routers import (
     vehicles,
     webhooks,
 )
+from app.services.billing_service import run_subscription_sweeper
 
 logger = structlog.get_logger()
 
@@ -38,7 +43,11 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("RoutePass API starting", environment=settings.environment)
+    sweeper_task = asyncio.create_task(run_subscription_sweeper(SessionLocal))
     yield
+    sweeper_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sweeper_task
     logger.info("RoutePass API shutting down")
 
 
@@ -76,6 +85,7 @@ app.include_router(tickets.router, prefix=f"{API_PREFIX}/tickets", tags=["ticket
 app.include_router(stations.router, prefix=f"{API_PREFIX}/stations", tags=["stations"])
 app.include_router(vehicles.router, prefix=f"{API_PREFIX}/vehicles", tags=["vehicles"])
 app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["webhooks"])
+app.include_router(billing.router, prefix=f"{API_PREFIX}/billing", tags=["billing"])
 app.include_router(public.router, prefix=f"{API_PREFIX}/public", tags=["public"])
 
 

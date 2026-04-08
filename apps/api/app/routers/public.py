@@ -54,6 +54,7 @@ class PublicTripResponse(BaseModel):
     available_seat_count: int
     price_ghs: float | None
     company_name: str
+    company_code: str
     brand_color: str | None
     booking_open: bool
 
@@ -110,6 +111,14 @@ class PublicRouteResult(BaseModel):
     destination_station_city: str | None
     price_ticket_base: float | None
     seats_available: int
+
+
+class PublicCompanyResult(BaseModel):
+    id: int
+    name: str
+    company_code: str
+    brand_color: str | None
+    logo_url: str | None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -198,6 +207,29 @@ async def search_public_routes(
     return output
 
 
+@router.get("/companies", response_model=list[PublicCompanyResult])
+@limiter.limit("60/minute")
+async def list_public_companies(
+    request: Request,
+    db: AsyncSession = Depends(get_db_public),
+):
+    """All active companies on the platform."""
+    result = await db.execute(
+        select(Company).where(Company.is_active.is_(True)).order_by(Company.name.asc())
+    )
+    companies = result.scalars().all()
+    return [
+        PublicCompanyResult(
+            id=c.id,
+            name=c.name,
+            company_code=c.company_code,
+            brand_color=c.brand_color,
+            logo_url=c.logo_url,
+        )
+        for c in companies
+    ]
+
+
 @router.get("/trips", response_model=list[PublicTripResponse])
 @limiter.limit("100/minute")
 async def list_public_trips(
@@ -205,6 +237,7 @@ async def list_public_trips(
     from_station_id: int | None = None,
     to_station_id: int | None = None,
     date: str | None = None,
+    company_code: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_public),
@@ -240,6 +273,13 @@ async def list_public_trips(
                 status_code=400, detail="Invalid date format, use YYYY-MM-DD"
             ) from err
         q = q.where(func.date(Trip.departure_time) == day)
+    if company_code is not None:
+        company_sub = (
+            select(Company.id)
+            .where(Company.company_code == company_code, Company.is_active.is_(True))
+            .scalar_subquery()
+        )
+        q = q.where(Trip.company_id == company_sub)
 
     result = await db.execute(q.limit(limit).offset(offset))
     trips = result.scalars().all()
@@ -270,6 +310,7 @@ async def list_public_trips(
                 available_seat_count=max(0, capacity - active_seats),
                 price_ghs=float(trip.price_ticket_base) if trip.price_ticket_base else None,
                 company_name=trip.company.name,
+                company_code=trip.company.company_code,
                 brand_color=trip.company.brand_color,
                 booking_open=trip.booking_open,
             )
@@ -323,6 +364,7 @@ async def get_public_trip(
         available_seat_count=max(0, capacity - active_seats),
         price_ghs=float(trip.price_ticket_base) if trip.price_ticket_base else None,
         company_name=trip.company.name,
+        company_code=trip.company.company_code,
         brand_color=trip.company.brand_color,
         booking_open=trip.booking_open,
     )

@@ -2,11 +2,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
+from app.models.subscription import SubscriptionPlan
 from app.models.user import User, UserRole
 from app.models.vehicle import Vehicle, VehicleMaintenanceLog
 
@@ -63,6 +64,30 @@ async def create_vehicle(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
+    # Enforce max_vehicles limit from subscription plan
+    company = current_user.company
+    if company and company.subscription_plan_id:
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == company.subscription_plan_id)
+        )
+        plan = plan_result.scalar_one_or_none()
+        if plan and plan.max_vehicles is not None:
+            count_result = await db.execute(
+                select(func.count()).where(
+                    Vehicle.company_id == current_user.company_id,
+                    Vehicle.is_active.is_(True),
+                )
+            )
+            count = count_result.scalar_one()
+            if count >= plan.max_vehicles:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Vehicle limit reached ({plan.max_vehicles}) for your "
+                        f"'{plan.name}' plan. Upgrade your subscription to add more vehicles."
+                    ),
+                )
+
     vehicle = Vehicle(
         company_id=current_user.company_id,
         plate_number=body.plate_number,

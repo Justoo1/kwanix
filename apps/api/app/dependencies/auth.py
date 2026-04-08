@@ -83,11 +83,30 @@ async def get_db_for_user(
     """
     Returns a DB session with RLS context set for the current user's company.
     super_admin users get an unfiltered session.
+    Also enforces subscription status — suspended companies receive HTTP 402.
     """
     if current_user.role != UserRole.super_admin and current_user.company_id:
         # SET LOCAL does not support asyncpg positional parameters — inline the integer.
         # company_id is always a trusted integer from the database, never user-supplied text.
         await db.execute(text(f"SET LOCAL app.current_company_id = {int(current_user.company_id)}"))
+
+        # Subscription guard — advance status lazily then check
+        company = current_user.company
+        if company is not None:
+            from app.services.billing_service import (
+                advance_company_status_if_needed,  # noqa: PLC0415
+            )
+
+            await advance_company_status_if_needed(company, db)
+            if company.subscription_status == "suspended":
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "code": "SUBSCRIPTION_SUSPENDED",
+                        "message": "Your subscription has been suspended. "
+                        "Go to Settings → Billing to reactivate.",
+                    },
+                )
     yield db
 
 

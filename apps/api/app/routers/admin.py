@@ -26,6 +26,7 @@ from app.database import get_db
 from app.dependencies.auth import require_role
 from app.integrations.email import send_sla_report_email
 from app.models.company import Company
+from app.models.subscription import SubscriptionPlan
 from app.models.ticket import TicketStatus
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
@@ -147,6 +148,9 @@ async def create_company(
         subdomain=body.subdomain,
         brand_color=body.brand_color,
         is_active=True,
+        api_key=secrets.token_urlsafe(32),
+        subscription_status="trialing",
+        trial_ends_at=datetime.now(UTC) + timedelta(days=30),
     )
     db.add(company)
     await db.commit()
@@ -1195,3 +1199,194 @@ async def send_sla_email(
         late=late,
         on_time_pct=on_time_pct,
     )
+
+
+# ── Subscription plan management (super_admin only) ───────────────────────────
+
+
+class PlanCreate(BaseModel):
+    name: str
+    max_vehicles: int | None = None  # None = unlimited
+    price_ghs_month: float
+    price_ghs_annual: float
+    sort_order: int = 0
+
+
+class PlanUpdate(BaseModel):
+    name: str | None = None
+    max_vehicles: int | None = None
+    price_ghs_month: float | None = None
+    price_ghs_annual: float | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class PlanResponse(BaseModel):
+    id: int
+    name: str
+    max_vehicles: int | None
+    price_ghs_month: float
+    price_ghs_annual: float
+    is_active: bool
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm(cls, plan: SubscriptionPlan) -> "PlanResponse":
+        return cls(
+            id=plan.id,
+            name=plan.name,
+            max_vehicles=plan.max_vehicles,
+            price_ghs_month=float(plan.price_ghs_month),
+            price_ghs_annual=float(plan.price_ghs_annual),
+            is_active=plan.is_active,
+            sort_order=plan.sort_order,
+        )
+
+
+@router.get(
+    "/plans",
+    response_model=list[PlanResponse],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def list_plans_admin(db: AsyncSession = Depends(get_db)):
+    """super_admin: list all plans including inactive ones."""
+    result = await db.execute(select(SubscriptionPlan).order_by(SubscriptionPlan.sort_order))
+    return [PlanResponse.from_orm(p) for p in result.scalars().all()]
+
+
+@router.post(
+    "/plans",
+    response_model=PlanResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def create_plan(body: PlanCreate, db: AsyncSession = Depends(get_db)):
+    plan = SubscriptionPlan(
+        name=body.name,
+        max_vehicles=body.max_vehicles,
+        price_ghs_month=body.price_ghs_month,
+        price_ghs_annual=body.price_ghs_annual,
+        sort_order=body.sort_order,
+        is_active=True,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return PlanResponse.from_orm(plan)
+
+
+@router.patch(
+    "/plans/{plan_id}",
+    response_model=PlanResponse,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def update_plan(plan_id: int, body: PlanUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    if body.name is not None:
+        plan.name = body.name
+    if body.max_vehicles is not None:
+        plan.max_vehicles = body.max_vehicles
+    if body.price_ghs_month is not None:
+        plan.price_ghs_month = body.price_ghs_month
+    if body.price_ghs_annual is not None:
+        plan.price_ghs_annual = body.price_ghs_annual
+    if body.sort_order is not None:
+        plan.sort_order = body.sort_order
+    if body.is_active is not None:
+        plan.is_active = body.is_active
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return PlanResponse.from_orm(plan)
+
+
+@router.delete(
+    "/plans/{plan_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def deactivate_plan(plan_id: int, db: AsyncSession = Depends(get_db)):
+    """Soft-delete: sets is_active=False. Companies on this plan keep it until renewal."""
+    result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    plan.is_active = False
+    db.add(plan)
+    await db.commit()
+
+
+# ── Company billing override (super_admin only) ───────────────────────────────
+
+
+class BillingOverrideRequest(BaseModel):
+    subscription_status: str | None = None
+    current_period_end: datetime | None = None
+    subscription_plan_id: int | None = None
+
+
+@router.get(
+    "/companies/{company_id}/billing",
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_billing(company_id: int, db: AsyncSession = Depends(get_db)):
+    """super_admin: view full billing state for any company."""
+    result = await db.execute(
+        select(Company)
+        .where(Company.id == company_id)
+        .options(selectinload(Company.subscription_plan))
+    )
+    company = result.scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    plan = company.subscription_plan
+    return {
+        "company_id": company.id,
+        "company_name": company.name,
+        "subscription_status": company.subscription_status,
+        "plan_name": plan.name if plan else None,
+        "billing_cycle": company.billing_cycle,
+        "trial_ends_at": company.trial_ends_at,
+        "current_period_end": company.current_period_end,
+        "has_payment_method": bool(company.paystack_auth_code),
+        "has_subaccount": bool(company.paystack_subaccount_code),
+    }
+
+
+@router.post(
+    "/companies/{company_id}/billing/override",
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def override_company_billing(
+    company_id: int,
+    body: BillingOverrideRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: manually override subscription status or period end (e.g. extend trial)."""
+    VALID_STATUSES = {"trialing", "active", "grace", "suspended", "cancelled"}
+    if body.subscription_status and body.subscription_status not in VALID_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {VALID_STATUSES}",
+        )
+
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    if body.subscription_status:
+        company.subscription_status = body.subscription_status
+    if body.current_period_end is not None:
+        company.current_period_end = body.current_period_end
+    if body.subscription_plan_id is not None:
+        company.subscription_plan_id = body.subscription_plan_id
+
+    db.add(company)
+    await db.commit()
+    return {"message": "Billing override applied.", "company_id": company_id}

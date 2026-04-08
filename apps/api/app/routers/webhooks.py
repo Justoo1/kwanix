@@ -23,9 +23,11 @@ from app.integrations.paystack import verify_paystack_signature
 from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.payment_event import PaymentEvent
+from app.models.subscription import SubscriptionInvoice
 from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip
 from app.models.webhook_event import WebhookEvent
+from app.services.billing_service import _process_subscription_payment
 
 router = APIRouter()
 
@@ -49,6 +51,29 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
 
     payment_status = "success" if event_type == "charge.success" else "failed"
     payment_ref = payload.get("data", {}).get("reference")
+
+    # ── Check if this reference belongs to a subscription invoice first ────────
+    if payment_ref and event_type == "charge.success":
+        inv_result = await db.execute(
+            select(SubscriptionInvoice)
+            .where(SubscriptionInvoice.paystack_reference == payment_ref)
+            .options(selectinload(SubscriptionInvoice.company))
+        )
+        sub_invoice = inv_result.scalar_one_or_none()
+        if sub_invoice and sub_invoice.status != "paid":
+            await _process_subscription_payment(sub_invoice, payload, db)
+            event = PaymentEvent(
+                ticket_id=None,
+                provider_event_id=str(event_id),
+                provider="paystack",
+                event_type=event_type,
+                status=payment_status,
+                raw_payload=json.dumps(payload),
+                received_at=datetime.now(UTC),
+            )
+            db.add(event)
+            await db.commit()
+            return "processed_subscription"
 
     ticket = None
     if payment_ref:
@@ -113,6 +138,13 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
 @router.post("/paystack")
 @limiter.limit("60/minute")
 async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    # 0. Reject if Paystack is not configured (only hard-fail in production)
+    if not settings.paystack_secret_key and settings.environment == "production":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Payment provider not configured",
+        )
+
     # 1. Verify HMAC signature
     signature = request.headers.get("x-paystack-signature", "")
     body_bytes = await request.body()

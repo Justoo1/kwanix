@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { decodeJwt } from "jose";
 import { z } from "zod";
 
 import { createSession, deleteSession } from "@/lib/session";
@@ -67,7 +68,10 @@ export async function login(
 
   const user = (await meRes.json()) as SessionUser;
 
-  await createSession({ accessToken: access_token, refreshToken: refresh_token, user });
+  const { exp } = decodeJwt(access_token);
+  const accessTokenExpiresAt = exp ? exp * 1000 : Date.now() + 60 * 60 * 1000;
+
+  await createSession({ accessToken: access_token, refreshToken: refresh_token, accessTokenExpiresAt, user });
 
   redirect("/dashboard");
 }

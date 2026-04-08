@@ -193,7 +193,10 @@ class TestPublicBookingFlow:
 
     @pytest.mark.asyncio
     async def test_paid_ticket_accessible_via_public_endpoint(self, client, paid_ticket):
-        response = await client.get(f"/api/v1/public/tickets/{paid_ticket.id}")
+        response = await client.get(
+            f"/api/v1/public/tickets/{paid_ticket.id}",
+            params={"payment_ref": paid_ticket.payment_ref},
+        )
         assert response.status_code == 200
         body = response.json()
         assert body["payment_status"] == "paid"

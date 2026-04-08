@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSession } from "@/lib/session";
+import { getSession, isExpiringSoon, refreshSession } from "@/lib/session";
 
 const API_BASE =
   process.env.API_INTERNAL_URL ??
@@ -10,7 +10,15 @@ const API_BASE =
 type Context = { params: Promise<{ path: string[] }> };
 
 async function proxy(req: NextRequest, { params }: Context) {
-  const [session, { path }] = await Promise.all([getSession(), params]);
+  const [rawSession, { path }] = await Promise.all([getSession(), params]);
+
+  // Silently refresh the access token if it expires within 15 minutes.
+  // refreshSession() writes the updated cookie — only safe in Route Handlers.
+  const session =
+    rawSession && isExpiringSoon(rawSession.accessTokenExpiresAt)
+      ? ((await refreshSession(rawSession)) ?? rawSession)
+      : rawSession;
+
   const apiPath = `/api/v1/${path.join("/")}`;
 
   const targetUrl = new URL(`${API_BASE}${apiPath}`);

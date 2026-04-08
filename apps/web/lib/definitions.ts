@@ -33,6 +33,8 @@ export interface SessionUser {
 export interface SessionPayload {
   accessToken: string;
   refreshToken: string;
+  /** Unix timestamp in milliseconds — when the access token expires. */
+  accessTokenExpiresAt?: number;
   user: SessionUser;
 }
 

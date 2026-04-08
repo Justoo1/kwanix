@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     debug: bool = True
-    public_app_url: str = "http://localhost:3000"
+    public_app_url: str = "http://localhost:3000"  # Next.js frontend (for post-payment redirects)
+    api_public_url: str = "http://localhost:8000"  # FastAPI backend (for Paystack callback URL)
     allowed_origins: list[str] = ["http://localhost:3000"]
 
     # Arkesel low-balance alert threshold (units)
@@ -47,9 +48,7 @@ class Settings(BaseSettings):
     def _require_strong_secrets(self) -> "Settings":
         if self.environment == "production":
             if self.jwt_secret_key in _INSECURE_DEFAULTS:
-                raise ValueError(
-                    "JWT_SECRET_KEY must be set to a strong secret in production"
-                )
+                raise ValueError("JWT_SECRET_KEY must be set to a strong secret in production")
             if len(self.jwt_secret_key) < 32:
                 raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
         return self
