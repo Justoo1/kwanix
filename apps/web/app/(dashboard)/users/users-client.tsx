@@ -24,9 +24,7 @@ const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "station_clerk", label: "Station Clerk" },
 ];
 
-interface UserCreateResponse extends UserResponse {
-  temp_password?: string | null;
-}
+type UserCreateResponse = UserResponse & { temp_password?: string | null };
 
 interface InviteForm {
   full_name: string;

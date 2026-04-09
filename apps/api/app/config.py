@@ -1,4 +1,6 @@
-from pydantic import model_validator
+import json
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULTS = {"change-me-in-production", "", "secret"}
@@ -43,6 +45,16 @@ class Settings(BaseSettings):
     # Sentry — optional; set DSN to enable error tracking
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     @model_validator(mode="after")
     def _require_strong_secrets(self) -> "Settings":

@@ -21,8 +21,5 @@ node_modules/
 .env.staging.local
 .env.development.local
 
-# Type generation artifacts
-types/api.generated.ts
-
 # Test output
 coverage/
