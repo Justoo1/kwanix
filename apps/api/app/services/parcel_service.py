@@ -211,7 +211,10 @@ async def collect_parcel(
 
     if not verify_otp(parcel.otp_code, parcel.otp_expires_at, user_otp):
         parcel.otp_attempt_count += 1
-        await db.flush()
+        # Commit immediately so the count is durable even if the outer
+        # transaction rolls back — prevents the attempt counter from
+        # being reset and bypassing the 5-attempt lockout.
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or expired OTP. Please check the SMS sent to the receiver.",

@@ -12,6 +12,7 @@ _process_subscription_payment — updates invoice + company on successful charge
 """
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -20,11 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
 from app.models.subscription import SubscriptionInvoice
+from app.models.webhook_event import WebhookEvent
 
 logger = structlog.get_logger()
 
 # Grace period after trial/subscription expiry before full lockout
 GRACE_DAYS = 4
+
+# Maximum number of times a failed webhook event will be retried
+MAX_WEBHOOK_REPLAY_ATTEMPTS = 3
 
 
 def _grace_deadline(company: Company) -> datetime | None:
@@ -137,3 +142,51 @@ async def run_subscription_sweeper(get_session_fn) -> None:  # type: ignore[type
                 logger.info("subscription_sweeper.completed", companies_checked=len(companies))
         except Exception:
             logger.exception("subscription_sweeper.error")
+
+
+async def run_webhook_retry_sweeper(get_session_fn) -> None:  # type: ignore[type-arg]
+    """
+    Background sweeper: retry failed webhook events every 5 minutes.
+    Picks up to 20 unprocessed events per run and calls the Paystack
+    processor. On success the event is marked processed; on repeated
+    failure it is abandoned after MAX_WEBHOOK_REPLAY_ATTEMPTS tries.
+    """
+    # Lazy import to avoid circular dependency (webhooks router → billing service).
+    from app.routers.webhooks import _process_paystack_payload  # noqa: PLC0415
+
+    while True:
+        await asyncio.sleep(300)  # 5 minutes
+        try:
+            async with get_session_fn() as db:
+                result = await db.execute(
+                    select(WebhookEvent)
+                    .where(
+                        WebhookEvent.processed_at.is_(None),
+                        WebhookEvent.attempts < MAX_WEBHOOK_REPLAY_ATTEMPTS,
+                    )
+                    .order_by(WebhookEvent.created_at)
+                    .limit(20)
+                )
+                events = result.scalars().all()
+
+                for event in events:
+                    try:
+                        payload = json.loads(event.payload)
+                        await _process_paystack_payload(payload, db)
+                        event.processed_at = datetime.now(UTC)
+                        logger.info("webhook_retry.success", event_id=event.id)
+                    except Exception as exc:  # noqa: BLE001
+                        event.attempts += 1
+                        event.last_error = str(exc)[-2000:]
+                        logger.warning(
+                            "webhook_retry.failed",
+                            event_id=event.id,
+                            attempts=event.attempts,
+                            error=str(exc),
+                        )
+                    await db.commit()
+
+                if events:
+                    logger.info("webhook_retry_sweeper.completed", events_processed=len(events))
+        except Exception:
+            logger.exception("webhook_retry_sweeper.error")

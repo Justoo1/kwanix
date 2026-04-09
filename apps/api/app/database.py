@@ -12,6 +12,9 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    # Kill queries that run longer than 30 s so a single slow request
+    # cannot hold a connection and starve the pool.
+    connect_args={"command_timeout": 30},
 )
 
 SessionLocal = async_sessionmaker(

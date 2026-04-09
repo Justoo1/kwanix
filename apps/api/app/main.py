@@ -35,7 +35,7 @@ from app.routers import (
     vehicles,
     webhooks,
 )
-from app.services.billing_service import run_subscription_sweeper
+from app.services.billing_service import run_subscription_sweeper, run_webhook_retry_sweeper
 
 logger = structlog.get_logger()
 
@@ -43,11 +43,15 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("RoutePass API starting", environment=settings.environment)
-    sweeper_task = asyncio.create_task(run_subscription_sweeper(SessionLocal))
+    subscription_sweeper = asyncio.create_task(run_subscription_sweeper(SessionLocal))
+    webhook_sweeper = asyncio.create_task(run_webhook_retry_sweeper(SessionLocal))
     yield
-    sweeper_task.cancel()
+    subscription_sweeper.cancel()
+    webhook_sweeper.cancel()
     with contextlib.suppress(asyncio.CancelledError):
-        await sweeper_task
+        await subscription_sweeper
+    with contextlib.suppress(asyncio.CancelledError):
+        await webhook_sweeper
     logger.info("RoutePass API shutting down")
 
 

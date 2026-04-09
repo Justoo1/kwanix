@@ -11,6 +11,7 @@ import json
 import traceback
 from datetime import UTC, datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,8 @@ from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip
 from app.models.webhook_event import WebhookEvent
 from app.services.billing_service import _process_subscription_payment
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -128,8 +131,14 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
                         payment_ref=ticket.payment_ref,
                         company_name=company_obj.name,
                     )
-            except Exception:  # noqa: BLE001
-                pass  # email errors must never fail payment processing
+            except Exception as exc:  # noqa: BLE001
+                # Email errors must never fail payment processing, but log
+                # them so Sentry surfaces delivery problems.
+                logger.warning(
+                    "webhook.ticket_email_failed",
+                    ticket_id=ticket.id,
+                    error=str(exc),
+                )
 
     elif ticket and event_type == "charge.failed":
         ticket.payment_status = PaymentStatus.failed

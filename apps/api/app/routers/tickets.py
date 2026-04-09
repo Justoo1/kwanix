@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +19,8 @@ from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
 from app.services.qr_service import generate_qr_png_bytes
 from app.utils.phone import normalize_gh_phone
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -275,7 +278,12 @@ async def cancel_ticket(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    """Cancel a ticket. If payment_status=paid, initiates a Paystack refund."""
+    """
+    Cancel a ticket. Cancellation is always committed first.
+    If payment_status=paid a Paystack refund is attempted afterwards;
+    if the refund call fails the ticket stays cancelled and payment_status
+    remains 'paid' so an operator can process the refund manually.
+    """
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
     if ticket is None:
@@ -283,15 +291,27 @@ async def cancel_ticket(
     if ticket.status == TicketStatus.cancelled:
         raise HTTPException(status_code=400, detail="Ticket is already cancelled")
 
+    needs_refund = ticket.payment_status == PaymentStatus.paid and bool(ticket.payment_ref)
+    payment_ref = ticket.payment_ref
+    amount_kobo = int(float(ticket.fare_ghs) * 100)
+
     ticket.status = TicketStatus.cancelled
-
-    if ticket.payment_status == PaymentStatus.paid and ticket.payment_ref:
-        amount_kobo = int(float(ticket.fare_ghs) * 100)
-        await refund_transaction(ticket.payment_ref, amount_kobo)
-        ticket.payment_status = PaymentStatus.refunded
-
     await db.commit()
     await db.refresh(ticket)
+
+    if needs_refund:
+        try:
+            await refund_transaction(payment_ref, amount_kobo)
+            ticket.payment_status = PaymentStatus.refunded
+            await db.commit()
+            await db.refresh(ticket)
+        except Exception:  # noqa: BLE001
+            logger.error(
+                "refund.failed_after_cancel",
+                ticket_id=ticket_id,
+                payment_ref=payment_ref,
+            )
+
     return ticket
 
 
@@ -322,10 +342,22 @@ async def batch_cancel_tickets(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(get_current_user),
 ):
-    """Cancel multiple tickets by ID. Initiates Paystack refund for paid tickets."""
+    """
+    Cancel multiple tickets by ID.
+
+    Phase 1: mark all requested tickets as cancelled and commit. This is
+    always atomic — a DB error on one ticket adds it to `failed` without
+    affecting the rest.
+
+    Phase 2: attempt Paystack refunds for any previously-paid tickets.
+    Refund failures are logged but do NOT un-cancel the ticket. The
+    payment_status stays 'paid' so operators can process refunds manually.
+    """
     succeeded: list[int] = []
     failed: list[int] = []
+    tickets_to_refund: list[Ticket] = []
 
+    # ── Phase 1: cancel ───────────────────────────────────────────────────────
     for ticket_id in body.ticket_ids:
         try:
             result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
@@ -333,17 +365,30 @@ async def batch_cancel_tickets(
             if ticket is None or ticket.status == TicketStatus.cancelled:
                 failed.append(ticket_id)
                 continue
-            ticket.status = TicketStatus.cancelled
             if ticket.payment_status == PaymentStatus.paid and ticket.payment_ref:
-                amount_kobo = int(float(ticket.fare_ghs) * 100)
-                await refund_transaction(ticket.payment_ref, amount_kobo)
-                ticket.payment_status = PaymentStatus.refunded
+                tickets_to_refund.append(ticket)
+            ticket.status = TicketStatus.cancelled
             await db.flush()
             succeeded.append(ticket_id)
         except Exception:  # noqa: BLE001
             failed.append(ticket_id)
 
-    await db.commit()
+    await db.commit()  # commit all cancellations; expire_on_commit=False keeps objects live
+
+    # ── Phase 2: refund (non-fatal) ───────────────────────────────────────────
+    for ticket in tickets_to_refund:
+        try:
+            amount_kobo = int(float(ticket.fare_ghs) * 100)
+            await refund_transaction(ticket.payment_ref, amount_kobo)
+            ticket.payment_status = PaymentStatus.refunded
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            logger.error(
+                "batch_cancel.refund_failed",
+                ticket_id=ticket.id,
+                payment_ref=ticket.payment_ref,
+            )
+
     return BatchCancelResponse(succeeded=succeeded, failed=failed)
 
 
