@@ -50,7 +50,8 @@ def upgrade() -> None:
     """)
 
     # Grant connect + usage
-    op.execute(f"GRANT CONNECT ON DATABASE kwanix_db TO {APP_ROLE}")
+    # current_database() resolves at runtime — works for any DB name (staging, prod, etc.)
+    op.execute(f"DO $$ BEGIN EXECUTE 'GRANT CONNECT ON DATABASE ' || current_database() || ' TO {APP_ROLE}'; END $$")
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
 
     # Grant DML on all current tables; new tables added later need separate grants.
