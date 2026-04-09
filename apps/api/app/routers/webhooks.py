@@ -61,18 +61,24 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
         )
         sub_invoice = inv_result.scalar_one_or_none()
         if sub_invoice and sub_invoice.status != "paid":
-            event = PaymentEvent(
-                ticket_id=None,
-                provider_event_id=str(event_id),
-                provider="paystack",
-                event_type=event_type,
-                status=payment_status,
-                raw_payload=json.dumps(payload),
-                received_at=datetime.now(UTC),
-            )
-            db.add(event)
-            await db.flush()  # persist row before processing; rolls back if processing fails
+            # Phase 1 — commit dedup sentinel in its own transaction so it
+            # survives a crash during processing and blocks webhook retries.
+            from app.database import SessionLocal  # noqa: PLC0415
 
+            async with SessionLocal() as sentinel_session:
+                sentinel_event = PaymentEvent(
+                    ticket_id=None,
+                    provider_event_id=str(event_id),
+                    provider="paystack",
+                    event_type=event_type,
+                    status=payment_status,
+                    raw_payload=json.dumps(payload),
+                    received_at=datetime.now(UTC),
+                )
+                sentinel_session.add(sentinel_event)
+                await sentinel_session.commit()
+
+            # Phase 2 — process the payment in the original session.
             try:
                 await _process_subscription_payment(sub_invoice, payload, db)
                 await db.commit()
