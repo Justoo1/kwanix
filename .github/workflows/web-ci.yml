@@ -1,0 +1,59 @@
+name: Web CI
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+  pull_request:
+    paths:
+      - "apps/web/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start API (for type generation)
+        working-directory: .
+        run: docker compose up -d api
+
+      - name: Wait for API health
+        working-directory: .
+        run: |
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8000/health && break
+            echo "Waiting for API... ($i/15)"
+            sleep 4
+          done
+
+      - name: Generate TypeScript types from OpenAPI
+        working-directory: .
+        run: bash infrastructure/scripts/generate_types.sh
+
+      - name: Fail if generated types differ from committed version
+        working-directory: .
+        run: git diff --exit-code apps/web/types/api.generated.ts
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          NEXTAUTH_SECRET: test-secret
+          NEXTAUTH_URL: http://localhost:3000

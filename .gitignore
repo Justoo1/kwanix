@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.eslintcache
+
+# Environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+.env.dev
+.env.staging
+.env.production
+# Keep the example template and SSL certs dir placeholder in git
+!.env.example
+!infrastructure/nginx/certs/.gitkeep
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker (SSL certs only — Dockerfiles and .dockerignore ARE tracked)
+infrastructure/nginx/certs/*.crt
+infrastructure/nginx/certs/*.key
+infrastructure/nginx/certs/*.pem
+
+# Logs
+*.log
+logs/
+
+# Generated
+apps/web/src/types/api.generated.ts
+conversation.md
+Deployment Readiness Imple.md
+docs/*.md
+CLAUDE.md
+apps/web/CLAUDE.md
+apps/web/AGENTS.md

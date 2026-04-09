@@ -1,0 +1,46 @@
+# ── Stage 1: build deps into isolated venv ────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN pip install uv --no-cache-dir
+
+COPY pyproject.toml .
+
+# Install only production deps (no [dev] extras) into a virtual environment
+# so the runner stage gets a clean, copyable artifact
+RUN uv venv /opt/venv && \
+    uv pip install --python /opt/venv/bin/python "." --no-cache
+
+# ── Stage 2: production runner ─────────────────────────────────────────────────
+FROM python:3.11-slim AS runner
+
+WORKDIR /app
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Non-root user for security
+RUN addgroup --system routpass && adduser --system --ingroup routpass routpass
+
+# Copy the virtual environment from the builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy only what the app needs at runtime
+COPY --chown=routpass:routpass app/ ./app/
+COPY --chown=routpass:routpass alembic/ ./alembic/
+COPY --chown=routpass:routpass alembic.ini ./alembic.ini
+COPY --chown=routpass:routpass entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+USER routpass
+
+EXPOSE 8000
+
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "4", \
+     "--limit-request-body", "1048576"]
