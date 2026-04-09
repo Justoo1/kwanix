@@ -495,12 +495,12 @@ class TestInitializeTransactionPayload:
                 amount_kobo=5000,
                 email="test@example.com",
                 reference="KX-1-testref",
-                cancel_action="https://app.kwanix.com/payment/cancelled",
+                cancel_action="https://kwanix.com/payment/cancelled",
             )
 
         assert (
             captured["payload"].get("cancel_action")
-            == "https://app.kwanix.com/payment/cancelled"
+            == "https://kwanix.com/payment/cancelled"
         )
 
     @pytest.mark.asyncio

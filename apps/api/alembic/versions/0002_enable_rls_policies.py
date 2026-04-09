@@ -57,11 +57,22 @@ def upgrade() -> None:
     op.execute(f"DO $$ BEGIN EXECUTE 'GRANT CONNECT ON DATABASE ' || current_database() || ' TO {APP_ROLE}'; END $$")
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
 
-    # Grant DML on all current tables; new tables added later need separate grants.
+    # Grant DML on all tables that already exist at migration time.
     op.execute(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
     )
     op.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}")
+
+    # Default privileges — tables and sequences created by later migrations
+    # (e.g. webhook_events) automatically inherit these grants.
+    op.execute(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}"
+    )
+    op.execute(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        f"GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
+    )
 
     # ── Enable RLS on each company-scoped table ───────────────────────────────
     for table in RLS_TABLES:
@@ -93,6 +104,8 @@ def downgrade() -> None:
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM {APP_ROLE};
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM {APP_ROLE};
                 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {APP_ROLE};
                 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {APP_ROLE};
                 REVOKE USAGE ON SCHEMA public FROM {APP_ROLE};

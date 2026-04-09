@@ -142,8 +142,8 @@ Same fields as staging, with these differences:
 | Variable | What to set |
 |---|---|
 | `NEXT_PUBLIC_API_URL` | `https://api.kwanix.com` |
-| `NEXT_PUBLIC_APP_URL` | `https://app.kwanix.com` |
-| `ALLOWED_ORIGINS` | `https://app.kwanix.com` |
+| `NEXT_PUBLIC_APP_URL` | `https://kwanix.com` |
+| `ALLOWED_ORIGINS` | `https://kwanix.com` |
 | `PAYSTACK_SECRET_KEY` | Your Paystack **live** key (`sk_live_...`) |
 | `PAYSTACK_PUBLIC_KEY` | Your Paystack **live** key (`pk_live_...`) |
 | `ENVIRONMENT` | `production` |
