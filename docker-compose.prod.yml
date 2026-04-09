@@ -57,10 +57,12 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     environment:
       API_INTERNAL_URL: ${API_INTERNAL_URL}
       SESSION_SECRET: ${SESSION_SECRET}
       NODE_ENV: production
+      SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
     depends_on:
       - api
     restart: always
