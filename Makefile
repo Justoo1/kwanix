@@ -11,7 +11,11 @@
         migrate migrate-down migrate-history revision \
         seed \
         staging-up staging-down staging-build staging-migrate staging-logs \
+        staging-api-logs staging-web-logs staging-ps \
+        staging-shell staging-db-shell staging-db-list staging-db-restart-api \
         prod-up prod-down prod-build prod-migrate prod-logs \
+        prod-api-logs prod-web-logs prod-ps \
+        prod-shell prod-db-shell prod-db-list prod-restart-api \
         nginx-reload nginx-staging nginx-prod \
         clean clean-staging clean-prod prune
 
@@ -70,18 +74,32 @@ help:
 	@echo "    seed            Load demo data (company, stations, users, vehicle)"
 	@echo ""
 	@echo "  Staging (reads .env.staging)"
-	@echo "    staging-up      Start staging stack (detached)"
-	@echo "    staging-down    Stop staging stack"
-	@echo "    staging-build   Build staging images (no cache)"
-	@echo "    staging-migrate Apply pending migrations on staging"
-	@echo "    staging-logs    Follow staging logs"
+	@echo "    staging-up           Start staging stack (detached)"
+	@echo "    staging-down         Stop staging stack"
+	@echo "    staging-build        Build staging images (no cache)"
+	@echo "    staging-migrate      Apply pending migrations on staging"
+	@echo "    staging-logs         Follow all staging logs"
+	@echo "    staging-api-logs     Follow staging api logs only"
+	@echo "    staging-web-logs     Follow staging web logs only"
+	@echo "    staging-ps           Show staging container status"
+	@echo "    staging-shell        Bash shell inside staging api container"
+	@echo "    staging-db-shell     psql shell on staging (superuser)"
+	@echo "    staging-db-list      List staging databases"
+	@echo "    staging-restart-api  Restart staging api container"
 	@echo ""
 	@echo "  Production (reads .env.production)"
-	@echo "    prod-up         Start production stack (detached)"
-	@echo "    prod-down       Stop production stack"
-	@echo "    prod-build      Build production images (no cache)"
-	@echo "    prod-migrate    Apply pending migrations on production"
-	@echo "    prod-logs       Follow production logs"
+	@echo "    prod-up              Start production stack (detached)"
+	@echo "    prod-down            Stop production stack"
+	@echo "    prod-build           Build production images (no cache)"
+	@echo "    prod-migrate         Apply pending migrations on production"
+	@echo "    prod-logs            Follow all production logs"
+	@echo "    prod-api-logs        Follow production api logs only"
+	@echo "    prod-web-logs        Follow production web logs only"
+	@echo "    prod-ps              Show production container status"
+	@echo "    prod-shell           Bash shell inside production api container"
+	@echo "    prod-db-shell        psql shell on production (superuser)"
+	@echo "    prod-db-list         List production databases"
+	@echo "    prod-restart-api     Restart production api container"
 	@echo ""
 	@echo "  Nginx (run on VPS — host nginx, not Docker)"
 	@echo "    nginx-reload    Test config and reload host nginx"
@@ -230,6 +248,27 @@ staging-migrate:
 staging-logs:
 	$(STAGING) logs -f
 
+staging-api-logs:
+	$(STAGING) logs -f api
+
+staging-web-logs:
+	$(STAGING) logs -f web
+
+staging-ps:
+	$(STAGING) ps
+
+staging-shell:
+	$(STAGING) exec api bash
+
+staging-db-shell:
+	$(STAGING) exec postgres psql -U $${POSTGRES_USER:-kwanix} -d $${POSTGRES_DB:-kwanix_staging_db}
+
+staging-db-list:
+	$(STAGING) exec postgres psql -U $${POSTGRES_USER:-kwanix} -l
+
+staging-restart-api:
+	$(STAGING) restart api
+
 # ── Production ────────────────────────────────────────────────────────────────
 
 prod-up:
@@ -246,6 +285,27 @@ prod-migrate:
 
 prod-logs:
 	$(PROD) logs -f
+
+prod-api-logs:
+	$(PROD) logs -f api
+
+prod-web-logs:
+	$(PROD) logs -f web
+
+prod-ps:
+	$(PROD) ps
+
+prod-shell:
+	$(PROD) exec api bash
+
+prod-db-shell:
+	$(PROD) exec postgres psql -U $${POSTGRES_USER:-kwanix} -d $${POSTGRES_DB:-kwanix_prod_db}
+
+prod-db-list:
+	$(PROD) exec postgres psql -U $${POSTGRES_USER:-kwanix} -l
+
+prod-restart-api:
+	$(PROD) restart api
 
 # ── Nginx (host service — run on the VPS, not in Docker) ──────────────────────
 
