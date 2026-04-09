@@ -1,6 +1,6 @@
 import json
 
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULTS = {"change-me-in-production", "", "secret"}
@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     debug: bool = True
     public_app_url: str = "http://localhost:3000"  # Next.js frontend (for post-payment redirects)
     api_public_url: str = "http://localhost:8000"  # FastAPI backend (for Paystack callback URL)
-    allowed_origins: list[str] = ["http://localhost:3000"]
+    # Stored as str — pydantic-settings v2 tries json.loads() on list[str] fields,
+    # which breaks comma-separated env values. Parse manually via get_allowed_origins().
+    allowed_origins: str = "http://localhost:3000"
 
     # Arkesel low-balance alert threshold (units)
     sms_low_balance_threshold: int = 50
@@ -46,15 +48,12 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1
 
-    @field_validator("allowed_origins", mode="before")
-    @classmethod
-    def parse_origins(cls, v: object) -> object:
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("["):
-                return json.loads(v)
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    def get_allowed_origins(self) -> list[str]:
+        """Parse allowed_origins into a list, accepting comma-separated or JSON array."""
+        v = self.allowed_origins.strip()
+        if v.startswith("["):
+            return json.loads(v)
+        return [origin.strip() for origin in v.split(",") if origin.strip()]
 
     @model_validator(mode="after")
     def _require_strong_secrets(self) -> "Settings":

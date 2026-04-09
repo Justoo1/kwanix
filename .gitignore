@@ -45,7 +45,9 @@ Thumbs.db
 infrastructure/nginx/certs/*.crt
 infrastructure/nginx/certs/*.key
 infrastructure/nginx/certs/*.pem
-infrastructure/docs/
+infrastructure/docs/*.key
+infrastructure/docs/*.pem
+infrastructure/docs/*.crt
 
 # Logs
 *.log

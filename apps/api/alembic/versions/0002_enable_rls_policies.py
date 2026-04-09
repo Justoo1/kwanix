@@ -44,13 +44,17 @@ def upgrade() -> None:
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
                 CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_ROLE_PASSWORD}';
+            ELSE
+                -- Always sync the password so rotating APP_ROLE_PASSWORD takes effect.
+                ALTER ROLE {APP_ROLE} PASSWORD '{APP_ROLE_PASSWORD}';
             END IF;
         END
         $$
     """)
 
     # Grant connect + usage
-    op.execute(f"GRANT CONNECT ON DATABASE kwanix_db TO {APP_ROLE}")
+    # current_database() resolves at runtime — works for any DB name (staging, prod, etc.)
+    op.execute(f"DO $$ BEGIN EXECUTE 'GRANT CONNECT ON DATABASE ' || current_database() || ' TO {APP_ROLE}'; END $$")
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
 
     # Grant DML on all current tables; new tables added later need separate grants.
