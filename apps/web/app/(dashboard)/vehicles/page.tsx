@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { VehiclesView } from "./vehicles-view";
 
-export const metadata: Metadata = { title: "Vehicles — RoutePass" };
+export const metadata: Metadata = { title: "Vehicles — Kwanix" };
 
 const ALLOWED_ROLES = [
   "company_admin",

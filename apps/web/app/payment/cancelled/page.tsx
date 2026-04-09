@@ -7,7 +7,7 @@ export default function PaymentCancelledPage() {
       <div className="bg-white border-b border-zinc-200">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-2">
           <Bus className="h-5 w-5 text-emerald-600" />
-          <span className="font-bold text-zinc-900 text-lg">RoutePass</span>
+          <span className="font-bold text-zinc-900 text-lg">Kwanix</span>
         </div>
       </div>
 

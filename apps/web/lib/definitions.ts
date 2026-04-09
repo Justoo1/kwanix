@@ -1,5 +1,5 @@
 /**
- * Shared TypeScript types for the RoutePass web dashboard.
+ * Shared TypeScript types for the Kwanix web dashboard.
  *
  * Session / auth types are defined here.
  * Domain types (TripResponse, TicketResponse, etc.) are re-exported from the

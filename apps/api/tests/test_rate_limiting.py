@@ -37,7 +37,7 @@ async def test_tracking_endpoint_rate_limited():
     ) as client:
         status_codes = []
         for _ in range(101):
-            r = await client.get("/api/v1/track/RP-DOES-NOT-EXIST")
+            r = await client.get("/api/v1/track/KX-DOES-NOT-EXIST")
             status_codes.append(r.status_code)
 
     # First 100 should pass (404 — tracking number doesn't exist)

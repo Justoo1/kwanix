@@ -418,7 +418,7 @@ async def setup_subaccount(
 ):
     """
     Link a company bank account so that online ticket payments flow 100% to them
-    via a Paystack subaccount (RoutePass takes 0% per transaction).
+    via a Paystack subaccount (Kwanix takes 0% per transaction).
     """
     company = await _get_company_or_403(current_user, db)
     if company.subscription_status in ("suspended", "cancelled"):

@@ -26,7 +26,7 @@ down_revision: str | None = "0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-APP_ROLE = "routpass_app"
+APP_ROLE = "kwanix_app"
 
 
 def upgrade() -> None:

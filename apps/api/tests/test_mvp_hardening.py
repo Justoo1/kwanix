@@ -60,7 +60,7 @@ async def paid_ticket(db, company, loading_trip, clerk_user):
         seat_number=3,
         fare_ghs=50.0,
         payment_status=PaymentStatus.paid,
-        payment_ref="RP-99-abc12345",
+        payment_ref="KX-99-abc12345",
     )
     db.add(ticket)
     await db.flush()
@@ -152,7 +152,7 @@ class TestOtpAttemptCommit:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-OTP-001",
+            tracking_number="KX-TST-OTP-001",
             sender_name="Sender",
             sender_phone="233541111111",
             receiver_name="Receiver",
@@ -184,7 +184,7 @@ class TestOtpAttemptCommit:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-OTP-002",
+            tracking_number="KX-TST-OTP-002",
             sender_name="Sender",
             sender_phone="233541111111",
             receiver_name="Receiver",
@@ -216,7 +216,7 @@ class TestOtpAttemptCommit:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-OTP-003",
+            tracking_number="KX-TST-OTP-003",
             sender_name="Sender",
             sender_phone="233541111111",
             receiver_name="Receiver",
@@ -336,7 +336,7 @@ class TestBatchCancelAtomicity:
                 seat_number=seat,
                 fare_ghs=40.0,
                 payment_status=PaymentStatus.paid,
-                payment_ref=f"RP-{seat}-ref",
+                payment_ref=f"KX-{seat}-ref",
             )
             db.add(t)
             tickets.append(t)
@@ -379,7 +379,7 @@ class TestBatchCancelAtomicity:
             seat_number=20,
             fare_ghs=50.0,
             payment_status=PaymentStatus.paid,
-            payment_ref="RP-20-goodref",
+            payment_ref="KX-20-goodref",
         )
         db.add(t)
         await db.flush()
@@ -417,7 +417,7 @@ class TestBatchCancelAtomicity:
             seat_number=30,
             fare_ghs=40.0,
             payment_status=PaymentStatus.paid,
-            payment_ref="RP-30-ref-A",
+            payment_ref="KX-30-ref-A",
         )
         t_b = Ticket(
             company_id=company.id,
@@ -428,7 +428,7 @@ class TestBatchCancelAtomicity:
             seat_number=31,
             fare_ghs=40.0,
             payment_status=PaymentStatus.paid,
-            payment_ref="RP-31-ref-B",
+            payment_ref="KX-31-ref-B",
         )
         db.add(t_a)
         db.add(t_b)
@@ -621,7 +621,7 @@ class TestWebhookEmailLogging:
             seat_number=40,
             fare_ghs=55.0,
             payment_status=PaymentStatus.pending,
-            payment_ref="RP-40-emailtest",
+            payment_ref="KX-40-emailtest",
         )
         db.add(ticket)
         await db.flush()

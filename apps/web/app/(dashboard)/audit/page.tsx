@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
-export const metadata: Metadata = { title: "Audit Log — RoutePass" };
+export const metadata: Metadata = { title: "Audit Log — Kwanix" };
 
 interface AuditLogEntry {
   id: number;

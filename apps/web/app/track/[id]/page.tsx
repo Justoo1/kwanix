@@ -28,8 +28,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   return {
-    title: `Track ${id} — RoutePass`,
-    description: "Real-time parcel tracking for your RoutePass shipment.",
+    title: `Track ${id} — Kwanix`,
+    description: "Real-time parcel tracking for your Kwanix shipment.",
   };
 }
 
@@ -111,7 +111,7 @@ export default async function TrackPage({
       {/* Brand bar */}
       <div className="mb-8 flex flex-col items-center gap-1 select-none">
         <span className="text-xs font-bold tracking-[0.25em] uppercase text-zinc-500">
-          RoutePass
+          Kwanix
         </span>
         <h1 className="text-2xl font-extrabold text-white tracking-tight">
           Parcel Tracker
@@ -127,7 +127,7 @@ export default async function TrackPage({
       </div>
 
       <p className="mt-8 text-xs text-zinc-600 text-center">
-        For assistance, contact your nearest RoutePass station.
+        For assistance, contact your nearest Kwanix station.
       </p>
     </div>
   );

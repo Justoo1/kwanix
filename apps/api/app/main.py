@@ -42,7 +42,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("RoutePass API starting", environment=settings.environment)
+    logger.info("Kwanix API starting", environment=settings.environment)
     subscription_sweeper = asyncio.create_task(run_subscription_sweeper(SessionLocal))
     webhook_sweeper = asyncio.create_task(run_webhook_retry_sweeper(SessionLocal))
     yield
@@ -52,11 +52,11 @@ async def lifespan(app: FastAPI):
         await subscription_sweeper
     with contextlib.suppress(asyncio.CancelledError):
         await webhook_sweeper
-    logger.info("RoutePass API shutting down")
+    logger.info("Kwanix API shutting down")
 
 
 app = FastAPI(
-    title="RoutePass API",
+    title="Kwanix API",
     description="Unified Transit Management — Ticketing & Parcel Logistics",
     version="1.0.0",
     docs_url="/docs" if settings.debug else None,

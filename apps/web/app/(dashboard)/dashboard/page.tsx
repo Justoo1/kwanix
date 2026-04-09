@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { DashboardStatsView } from "./stats-view";
 
-export const metadata: Metadata = { title: "Dashboard — RoutePass" };
+export const metadata: Metadata = { title: "Dashboard — Kwanix" };
 
 export default async function DashboardPage() {
   const session = await getSession();

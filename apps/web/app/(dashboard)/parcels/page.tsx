@@ -7,7 +7,7 @@ import { getSession } from "@/lib/session";
 import type { UserRole } from "@/lib/definitions";
 import ParcelsClient from "./parcels-client";
 
-export const metadata: Metadata = { title: "Parcels — RoutePass" };
+export const metadata: Metadata = { title: "Parcels — Kwanix" };
 
 interface StationOption {
   id: number;

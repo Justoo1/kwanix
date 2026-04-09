@@ -2,7 +2,7 @@
  * GET /api/manifest/[id]
  *
  * Server-side proxy that:
- *  1. Reads the rp_session HttpOnly cookie to obtain the Bearer token.
+ *  1. Reads the kx_session HttpOnly cookie to obtain the Bearer token.
  *  2. Streams the raw PDF binary from FastAPI's
  *     GET /api/v1/trips/{id}/manifest to the browser.
  *

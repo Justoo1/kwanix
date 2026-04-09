@@ -6,7 +6,7 @@ import { apiFetch } from "@/lib/api";
 import type { TripResponse, TicketResponse } from "@/lib/definitions";
 import SeatPicker from "./seat-picker";
 
-export const metadata: Metadata = { title: "Tickets — RoutePass" };
+export const metadata: Metadata = { title: "Tickets — Kwanix" };
 
 const PAYMENT_STYLES: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-700",

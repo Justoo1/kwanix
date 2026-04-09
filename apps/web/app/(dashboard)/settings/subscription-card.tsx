@@ -212,7 +212,7 @@ export default function SubscriptionCard({
           {statusBadge(billing.subscription_status)}
         </CardTitle>
         <CardDescription>
-          Manage your RoutePass subscription plan and payment details.
+          Manage your Kwanix subscription plan and payment details.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -346,7 +346,7 @@ export default function SubscriptionCard({
                 <div>
                   <p className="text-sm font-medium text-zinc-700">Link payout account</p>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Online ticket payments go 100% to this account. RoutePass only charges your subscription fee.
+                    Online ticket payments go 100% to this account. Kwanix only charges your subscription fee.
                   </p>
                 </div>
 

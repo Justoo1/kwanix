@@ -596,7 +596,7 @@ class TestTripDepartureValidation:
         # Parcel assigned to this trip but still pending (not yet loaded)
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-DEP-00001",
+            tracking_number="KX-TST-DEP-00001",
             sender_name="Sender",
             sender_phone="233541234567",
             receiver_name="Receiver",

@@ -1,4 +1,4 @@
-# RoutePass — Makefile
+# Kwanix — Makefile
 # All commands run inside Docker. Run `make up` first.
 
 .PHONY: help \
@@ -12,6 +12,7 @@
         seed \
         staging-up staging-down staging-build staging-migrate staging-logs \
         prod-up prod-down prod-build prod-migrate prod-logs \
+        nginx-reload nginx-staging nginx-prod \
         clean clean-staging clean-prod prune
 
 # Shared env-file flag for each environment
@@ -23,7 +24,7 @@ PROD    = docker compose --env-file .env.production -f docker-compose.prod.yml
 
 help:
 	@echo ""
-	@echo "RoutePass — available targets"
+	@echo "Kwanix — available targets"
 	@echo ""
 	@echo "  Development (reads .env.dev)"
 	@echo "    up              Start all services: postgres, redis, api, web"
@@ -82,6 +83,11 @@ help:
 	@echo "    prod-migrate    Apply pending migrations on production"
 	@echo "    prod-logs       Follow production logs"
 	@echo ""
+	@echo "  Nginx (run on VPS — host nginx, not Docker)"
+	@echo "    nginx-reload    Test config and reload host nginx"
+	@echo "    nginx-staging   Install staging vhost and reload nginx"
+	@echo "    nginx-prod      Install production vhost and reload nginx"
+	@echo ""
 	@echo "  Cleanup"
 	@echo "    clean           Stop dev stack, remove volumes and locally-built images"
 	@echo "    clean-staging   Stop staging stack, remove volumes and locally-built images"
@@ -135,7 +141,7 @@ rebuild-api:
 rebuild-web:
 	# Clears the node_modules named volume so the next startup is fully fresh
 	$(DEV) rm -f -s -v web
-	docker volume rm routpass_web_node_modules 2>/dev/null || true
+	docker volume rm kwanix_web_node_modules 2>/dev/null || true
 	$(DEV) build --no-cache web
 	$(DEV) up -d web
 
@@ -148,7 +154,7 @@ web-shell:
 	$(DEV) exec web sh
 
 db-shell:
-	$(DEV) exec postgres psql -U $${POSTGRES_USER:-routpass} -d $${POSTGRES_DB:-routpass_db}
+	$(DEV) exec postgres psql -U $${POSTGRES_USER:-kwanix} -d $${POSTGRES_DB:-kwanix_db}
 
 # ── Type generation ───────────────────────────────────────────────────────────
 # Runs on the HOST (not inside Docker) so localhost:8000 resolves to the
@@ -240,6 +246,21 @@ prod-migrate:
 
 prod-logs:
 	$(PROD) logs -f
+
+# ── Nginx (host service — run on the VPS, not in Docker) ──────────────────────
+
+nginx-reload:
+	sudo nginx -t && sudo systemctl reload nginx
+
+nginx-staging:
+	sudo cp infrastructure/nginx/kwanix-staging.conf /etc/nginx/sites-available/
+	sudo ln -sf /etc/nginx/sites-available/kwanix-staging.conf /etc/nginx/sites-enabled/
+	$(MAKE) nginx-reload
+
+nginx-prod:
+	sudo cp infrastructure/nginx/kwanix-prod.conf /etc/nginx/sites-available/
+	sudo ln -sf /etc/nginx/sites-available/kwanix-prod.conf /etc/nginx/sites-enabled/
+	$(MAKE) nginx-reload
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 

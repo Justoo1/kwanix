@@ -35,14 +35,14 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 # Non-root user for security
-RUN addgroup -S routpass && adduser -S routpass -G routpass
+RUN addgroup -S kwanix && adduser -S kwanix -G kwanix
 
 # Standalone output produces a self-contained server at .next/standalone/server.js
-COPY --from=builder --chown=routpass:routpass /app/.next/standalone ./
-COPY --from=builder --chown=routpass:routpass /app/.next/static ./.next/static
-COPY --from=builder --chown=routpass:routpass /app/public ./public
+COPY --from=builder --chown=kwanix:kwanix /app/.next/standalone ./
+COPY --from=builder --chown=kwanix:kwanix /app/.next/static ./.next/static
+COPY --from=builder --chown=kwanix:kwanix /app/public ./public
 
-USER routpass
+USER kwanix
 
 EXPOSE 3000
 

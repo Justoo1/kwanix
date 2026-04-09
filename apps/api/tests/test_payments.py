@@ -66,7 +66,7 @@ async def paid_ticket(db: AsyncSession, company, loading_trip, clerk_user):
         seat_number=5,
         fare_ghs=45.0,
         payment_status=PaymentStatus.paid,
-        payment_ref="RP-99-abc12345",
+        payment_ref="KX-99-abc12345",
     )
     db.add(ticket)
     await db.flush()
@@ -92,7 +92,7 @@ def _fake_httpx_client(authorization_url: str = "https://checkout.paystack.com/f
         "data": {
             "authorization_url": authorization_url,
             "access_code": "fake_access_code",
-            "reference": "RP-1-fake0001",
+            "reference": "KX-1-fake0001",
         },
     }
     mock_client = AsyncMock()
@@ -123,7 +123,7 @@ class TestInitiatePayment:
         assert "authorization_url" in body
         assert body["authorization_url"] == "https://checkout.paystack.com/fake_url"
         assert "reference" in body
-        assert body["reference"].startswith(f"RP-{pending_ticket.id}-")
+        assert body["reference"].startswith(f"KX-{pending_ticket.id}-")
 
     @pytest.mark.asyncio
     async def test_payment_ref_stored_on_ticket(
@@ -244,7 +244,7 @@ class TestPaystackWebhook:
             "event": event_type,
             "data": {
                 "id": event_id,
-                "reference": ticket.payment_ref or f"RP-{ticket.id}-test0001",
+                "reference": ticket.payment_ref or f"KX-{ticket.id}-test0001",
                 "amount": int(ticket.fare_ghs * 100),
                 "status": "success" if event_type == "charge.success" else "failed",
             },
@@ -255,7 +255,7 @@ class TestPaystackWebhook:
 
     @pytest.mark.asyncio
     async def test_charge_success_sets_ticket_paid(self, client, pending_ticket, db: AsyncSession):
-        pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00001"
+        pending_ticket.payment_ref = f"KX-{pending_ticket.id}-abc00001"
         await db.flush()
 
         body, sig = self._build_charge_event("charge.success", pending_ticket)
@@ -275,7 +275,7 @@ class TestPaystackWebhook:
 
     @pytest.mark.asyncio
     async def test_charge_failed_sets_ticket_failed(self, client, pending_ticket, db: AsyncSession):
-        pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00002"
+        pending_ticket.payment_ref = f"KX-{pending_ticket.id}-abc00002"
         await db.flush()
 
         body, sig = self._build_charge_event("charge.failed", pending_ticket, event_id=2002)
@@ -310,7 +310,7 @@ class TestPaystackWebhook:
     async def test_duplicate_event_returns_200_no_double_update(
         self, client, pending_ticket, db: AsyncSession
     ):
-        pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00003"
+        pending_ticket.payment_ref = f"KX-{pending_ticket.id}-abc00003"
         await db.flush()
 
         # Pre-insert the payment event to simulate prior processing
@@ -361,7 +361,7 @@ class TestPaystackWebhook:
     async def test_unknown_event_type_returns_200_no_action(
         self, client, pending_ticket, db: AsyncSession
     ):
-        pending_ticket.payment_ref = f"RP-{pending_ticket.id}-abc00004"
+        pending_ticket.payment_ref = f"KX-{pending_ticket.id}-abc00004"
         await db.flush()
 
         payload = {
@@ -412,7 +412,7 @@ class TestWebhookRetryQueue:
         super_admin = User(
             full_name="Super Admin",
             phone="233200000010",
-            email="superadmin@routepass.io",
+            email="superadmin@kwanix.io",
             hashed_password=hash_password("adminpass"),
             role=UserRole.super_admin,
         )
@@ -494,13 +494,13 @@ class TestInitializeTransactionPayload:
             await initialize_transaction(
                 amount_kobo=5000,
                 email="test@example.com",
-                reference="RP-1-testref",
-                cancel_action="https://app.routepass.com/payment/cancelled",
+                reference="KX-1-testref",
+                cancel_action="https://app.kwanix.com/payment/cancelled",
             )
 
         assert (
             captured["payload"].get("cancel_action")
-            == "https://app.routepass.com/payment/cancelled"
+            == "https://app.kwanix.com/payment/cancelled"
         )
 
     @pytest.mark.asyncio
@@ -531,7 +531,7 @@ class TestInitializeTransactionPayload:
             await initialize_transaction(
                 amount_kobo=5000,
                 email="test@example.com",
-                reference="RP-1-testref",
+                reference="KX-1-testref",
             )
 
         assert "cancel_action" not in captured["payload"]

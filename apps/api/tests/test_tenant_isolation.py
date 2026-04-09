@@ -11,8 +11,8 @@ can be targeted or skipped independently:
     pytest -m "not postgres"     # skip these (SQLite-only CI)
 
 Architecture tested:
-  - routpass (superuser) → seeds data and cleans up; bypasses RLS
-  - routpass_app (non-superuser) → the role the live app uses; subject to RLS
+  - kwanix (superuser) → seeds data and cleans up; bypasses RLS
+  - kwanix_app (non-superuser) → the role the live app uses; subject to RLS
   The test seeds via admin, queries via app, verifies isolation, then deletes.
 """
 
@@ -28,16 +28,16 @@ pytestmark = pytest.mark.postgres
 
 # ── Connection strings ────────────────────────────────────────────────────────
 
-# routpass_app is the non-superuser application role — RLS is enforced.
+# kwanix_app is the non-superuser application role — RLS is enforced.
 _APP_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://routpass_app:secret_app@postgres:5432/routpass_db",
+    "postgresql+asyncpg://kwanix_app:secret_app@postgres:5432/kwanix_db",
 )
 
-# routpass is the superuser role — used for seeding and cleanup only.
+# kwanix is the superuser role — used for seeding and cleanup only.
 _ADMIN_URL = os.getenv(
     "DATABASE_ADMIN_URL",
-    "postgresql+asyncpg://routpass:secret@postgres:5432/routpass_db",
+    "postgresql+asyncpg://kwanix:secret@postgres:5432/kwanix_db",
 )
 
 
@@ -134,7 +134,7 @@ class TestRLSTenantIsolation:
                     ),
                     {
                         "c": cid_b,
-                        "tn": f"RP-{code_b}-2026-00001",
+                        "tn": f"KX-{code_b}-2026-00001",
                         "o": sid_b,
                         "d": sid_b2,
                         "u": uid_b,
@@ -236,7 +236,7 @@ class TestRLSTenantIsolation:
                     ),
                     {
                         "c": cid,
-                        "tn": f"RP-{code}-2026-00001",
+                        "tn": f"KX-{code}-2026-00001",
                         "o": sid1,
                         "d": sid2,
                         "u": uid,

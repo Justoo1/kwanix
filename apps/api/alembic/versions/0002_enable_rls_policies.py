@@ -10,10 +10,10 @@ The app sets the session variable 'app.current_company_id' at the
 start of each authenticated request (see dependencies/auth.py).
 
 Architecture note on roles:
-  - routpass (superuser) — used only for migrations; bypasses RLS automatically.
-  - routpass_app (non-superuser) — used by the live application; subject to RLS.
-    DATABASE_URL in production/dev must point to routpass_app.
-    DATABASE_ADMIN_URL (or Alembic's sqlalchemy.url) uses routpass for DDL.
+  - kwanix (superuser) — used only for migrations; bypasses RLS automatically.
+  - kwanix_app (non-superuser) — used by the live application; subject to RLS.
+    DATABASE_URL in production/dev must point to kwanix_app.
+    DATABASE_ADMIN_URL (or Alembic's sqlalchemy.url) uses kwanix for DDL.
 
 super_admin users bypass RLS because no session variable is set for them.
 """
@@ -32,7 +32,7 @@ depends_on: str | Sequence[str] | None = None
 RLS_TABLES = ["parcels", "trips", "tickets", "stations", "vehicles", "users"]
 
 # Application role — non-superuser so RLS is enforced
-APP_ROLE = "routpass_app"
+APP_ROLE = "kwanix_app"
 APP_ROLE_PASSWORD = os.environ.get("APP_ROLE_PASSWORD", "secret_app")
 
 
@@ -50,7 +50,7 @@ def upgrade() -> None:
     """)
 
     # Grant connect + usage
-    op.execute(f"GRANT CONNECT ON DATABASE routpass_db TO {APP_ROLE}")
+    op.execute(f"GRANT CONNECT ON DATABASE kwanix_db TO {APP_ROLE}")
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
 
     # Grant DML on all current tables; new tables added later need separate grants.
@@ -63,8 +63,8 @@ def upgrade() -> None:
     for table in RLS_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
 
-        # FORCE RLS applies to the table owner (routpass) too, but not to
-        # Postgres superusers. routpass_app (non-superuser) is always subject to RLS.
+        # FORCE RLS applies to the table owner (kwanix) too, but not to
+        # Postgres superusers. kwanix_app (non-superuser) is always subject to RLS.
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
 
         # Policy: rows are visible when company_id matches the session variable,

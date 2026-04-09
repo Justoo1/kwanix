@@ -75,9 +75,9 @@ export async function generateMetadata({
   const { company_code } = await params;
   const companies = await getCompanies();
   const company = companies.find((c) => c.company_code === company_code);
-  if (!company) return { title: "Company not found — RoutePass" };
+  if (!company) return { title: "Company not found — Kwanix" };
   return {
-    title: `${company.name} Trips — RoutePass`,
+    title: `${company.name} Trips — Kwanix`,
     description: `Browse and book upcoming trips with ${company.name}.`,
   };
 }
@@ -257,7 +257,7 @@ export default async function CompanyTripsPage({
       {/* Footer */}
       <footer className="border-t border-zinc-100 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-4 py-5 text-xs text-zinc-400 flex justify-between">
-          <span>© {new Date().getFullYear()} RoutePass</span>
+          <span>© {new Date().getFullYear()} Kwanix</span>
           <Link href="/" className="hover:text-zinc-700">All companies</Link>
         </div>
       </footer>
