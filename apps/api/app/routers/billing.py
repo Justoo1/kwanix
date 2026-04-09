@@ -22,7 +22,7 @@ from typing import Literal
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -83,7 +83,7 @@ class SubscriptionStatusResponse(BaseModel):
 class SelectPlanRequest(BaseModel):
     plan_id: int
     billing_cycle: Literal["monthly", "annual"]
-    billing_email: str
+    billing_email: EmailStr
 
 
 class SetupPaymentMethodRequest(BaseModel):
@@ -204,6 +204,11 @@ async def select_plan(
         raise HTTPException(status_code=404, detail="Plan not found or inactive.")
 
     company = await _get_company_or_403(current_user, db)
+    if company.subscription_status in ("suspended", "cancelled"):
+        raise HTTPException(
+            status_code=403,
+            detail="Resolve your outstanding balance before making changes.",
+        )
     company.subscription_plan_id = plan.id
     company.billing_cycle = body.billing_cycle
     company.billing_email = body.billing_email
@@ -396,8 +401,9 @@ async def setup_payment_method(
             phone=current_user.phone or "",
         )
         customer_code = customer_data.get("customer_code")
-        if customer_code:
-            company.paystack_customer_id = customer_code
+        if not customer_code:
+            raise HTTPException(status_code=502, detail="Failed to register with payment provider.")
+        company.paystack_customer_id = customer_code
 
     db.add(company)
     await db.commit()
@@ -415,6 +421,11 @@ async def setup_subaccount(
     via a Paystack subaccount (RoutePass takes 0% per transaction).
     """
     company = await _get_company_or_403(current_user, db)
+    if company.subscription_status in ("suspended", "cancelled"):
+        raise HTTPException(
+            status_code=403,
+            detail="Resolve your outstanding balance before making changes.",
+        )
     email = company.billing_email or (current_user.email or "")
     if not email:
         raise HTTPException(status_code=400, detail="Set a billing_email first.")
@@ -469,6 +480,11 @@ async def cancel_subscription(
     Clears the stored authorization code so no further automatic charges occur.
     """
     company = await _get_company_or_403(current_user, db)
+    if company.subscription_status in ("suspended", "cancelled"):
+        raise HTTPException(
+            status_code=403,
+            detail="Resolve your outstanding balance before making changes.",
+        )
     company.subscription_status = "cancelled"
     company.paystack_auth_code = None
     db.add(company)

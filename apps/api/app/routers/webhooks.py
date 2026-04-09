@@ -61,7 +61,6 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
         )
         sub_invoice = inv_result.scalar_one_or_none()
         if sub_invoice and sub_invoice.status != "paid":
-            await _process_subscription_payment(sub_invoice, payload, db)
             event = PaymentEvent(
                 ticket_id=None,
                 provider_event_id=str(event_id),
@@ -72,7 +71,15 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
                 received_at=datetime.now(UTC),
             )
             db.add(event)
-            await db.commit()
+            await db.flush()  # persist row before processing; rolls back if processing fails
+
+            try:
+                await _process_subscription_payment(sub_invoice, payload, db)
+                await db.commit()
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                raise
+
             return "processed_subscription"
 
     ticket = None

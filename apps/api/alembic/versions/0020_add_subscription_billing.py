@@ -73,11 +73,23 @@ def upgrade() -> None:
     op.add_column("companies", sa.Column("current_period_end", sa.DateTime(timezone=True), nullable=True))
     op.add_column("companies", sa.Column("paystack_customer_id", sa.String(100), nullable=True))
     op.add_column("companies", sa.Column("paystack_auth_code", sa.String(100), nullable=True))
+    op.create_index(
+        "uq_companies_paystack_auth_code",
+        "companies",
+        ["paystack_auth_code"],
+        unique=True,
+        postgresql_where=sa.text("paystack_auth_code IS NOT NULL"),
+    )
     op.add_column("companies", sa.Column("paystack_subaccount_code", sa.String(100), nullable=True))
     op.add_column("companies", sa.Column("billing_email", sa.String(150), nullable=True))
     op.add_column("companies", sa.Column("bank_account_number", sa.String(30), nullable=True))
     op.add_column("companies", sa.Column("bank_account_name", sa.String(100), nullable=True))
     op.add_column("companies", sa.Column("bank_code", sa.String(10), nullable=True))
+    op.create_index(
+        "ix_companies_subscription_status",
+        "companies",
+        ["subscription_status"],
+    )
 
     # ── 3. Create subscription_invoices table ─────────────────────────────────
     op.create_table(
@@ -169,12 +181,14 @@ def downgrade() -> None:
     op.drop_column("companies", "bank_account_number")
     op.drop_column("companies", "billing_email")
     op.drop_column("companies", "paystack_subaccount_code")
+    op.drop_index("uq_companies_paystack_auth_code", "companies")
     op.drop_column("companies", "paystack_auth_code")
     op.drop_column("companies", "paystack_customer_id")
     op.drop_column("companies", "current_period_end")
     op.drop_column("companies", "trial_ends_at")
     op.drop_column("companies", "billing_cycle")
     op.drop_column("companies", "subscription_plan_id")
+    op.drop_index("ix_companies_subscription_status", "companies")
     op.drop_column("companies", "subscription_status")
 
     op.drop_table("subscription_plans")

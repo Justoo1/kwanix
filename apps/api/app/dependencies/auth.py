@@ -97,6 +97,10 @@ async def get_db_for_user(
                 advance_company_status_if_needed,  # noqa: PLC0415
             )
 
+            locked = await db.execute(
+                select(Company).where(Company.id == company.id).with_for_update()
+            )
+            company = locked.scalar_one()
             await advance_company_status_if_needed(company, db)
             if company.subscription_status == "suspended":
                 raise HTTPException(

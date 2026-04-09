@@ -36,7 +36,7 @@ class Company(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     paystack_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    paystack_auth_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    paystack_auth_code: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
     paystack_subaccount_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     billing_email: Mapped[str | None] = mapped_column(String(150), nullable=True)
     bank_account_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
