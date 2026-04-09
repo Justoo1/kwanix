@@ -40,14 +40,12 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       MANIFEST_EMAIL: ${MANIFEST_EMAIL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+    ports:
+      - "127.0.0.1:8101:8000"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-
-  api:
-    ports:
-      - "127.0.0.1:8101:8000"
 
   web:
     build:
