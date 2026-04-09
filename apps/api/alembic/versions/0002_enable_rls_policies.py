@@ -44,6 +44,9 @@ def upgrade() -> None:
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
                 CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_ROLE_PASSWORD}';
+            ELSE
+                -- Always sync the password so rotating APP_ROLE_PASSWORD takes effect.
+                ALTER ROLE {APP_ROLE} PASSWORD '{APP_ROLE_PASSWORD}';
             END IF;
         END
         $$
