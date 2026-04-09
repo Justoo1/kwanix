@@ -7,7 +7,7 @@ export default function PublicNav() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-semibold text-zinc-900">
           <Bus className="h-5 w-5 text-emerald-600" />
-          RoutePass
+          Kwanix
         </Link>
         <nav className="flex items-center gap-4">
           <Link

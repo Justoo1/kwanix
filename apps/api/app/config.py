@@ -6,7 +6,7 @@ _INSECURE_DEFAULTS = {"change-me-in-production", "", "secret"}
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql+asyncpg://routpass:secret@localhost:5432/routpass_db"
+    database_url: str = "postgresql+asyncpg://kwanix:secret@localhost:5432/kwanix_db"
 
     # Security
     jwt_secret_key: str
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # Arkesel SMS
     arkesel_api_key: str = ""
-    arkesel_sender_id: str = "RoutePass"
+    arkesel_sender_id: str = "Kwanix"
 
     # Payments
     paystack_secret_key: str = ""
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # Resend — optional; required only when manifest_email is set
     resend_api_key: str | None = None
-    resend_from_email: str = "manifest@routepass.com"
+    resend_from_email: str = "manifest@kwanix.com"
 
     # Sentry — optional; set DSN to enable error tracking
     sentry_dsn: str | None = None

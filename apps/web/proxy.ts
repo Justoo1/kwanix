@@ -19,7 +19,7 @@ function getSecretKey() {
     if (process.env.NODE_ENV === "production") {
       throw new Error("SESSION_SECRET environment variable must be set in production");
     }
-    return new TextEncoder().encode("routepass-dev-secret-32chars!!");
+    return new TextEncoder().encode("kwanix-dev-secret-32chars!!");
   }
   return new TextEncoder().encode(secret);
 }
@@ -40,7 +40,7 @@ export async function proxy(request: NextRequest) {
   const isProtected = PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(prefix + "/")
   );
-  const sessionCookie = request.cookies.get("rp_session")?.value;
+  const sessionCookie = request.cookies.get("kx_session")?.value;
   const authenticated = await isValidSession(sessionCookie);
 
   if (isProtected && !authenticated) {

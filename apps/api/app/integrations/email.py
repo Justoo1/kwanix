@@ -31,7 +31,7 @@ async def send_sla_report_email(
         return
 
     body = (
-        "RoutePass — Parcel Delivery SLA Report (last 7 days)\n\n"
+        "Kwanix — Parcel Delivery SLA Report (last 7 days)\n\n"
         f"Total parcels:  {total}\n"
         f"On-time:        {on_time}\n"
         f"Late:           {late}\n"
@@ -43,7 +43,7 @@ async def send_sla_report_email(
         payload = {
             "from": settings.resend_from_email,
             "to": [to_email],
-            "subject": "RoutePass — Parcel Delivery SLA Report",
+            "subject": "Kwanix — Parcel Delivery SLA Report",
             "text": body,
         }
 
@@ -151,7 +151,7 @@ async def send_manifest_email(trip_id: int, pdf_bytes: bytes) -> None:
         payload = {
             "from": settings.resend_from_email,
             "to": [settings.manifest_email],
-            "subject": f"RoutePass — Trip {trip_id} Manifest",
+            "subject": f"Kwanix — Trip {trip_id} Manifest",
             "text": f"Please find attached the passenger manifest for trip #{trip_id}.",
             "attachments": [
                 {

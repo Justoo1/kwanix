@@ -8,7 +8,7 @@ import type { TripResponse } from "@/lib/definitions"
 import ScheduleTripModal from "./schedule-trip-modal"
 import RecurringScheduleModal from "./recurring-schedule-modal"
 
-export const metadata: Metadata = { title: "Trips — RoutePass" }
+export const metadata: Metadata = { title: "Trips — Kwanix" }
 
 // ── Status configuration ───────────────────────────────────────────────────────
 

@@ -162,7 +162,7 @@ async def create_ticket(
 
 
 class InitiatePaymentRequest(BaseModel):
-    email: str | None = None  # Optional — falls back to {phone}@routepass.app
+    email: str | None = None  # Optional — falls back to {phone}@kwanix.app
 
 
 class InitiatePaymentResponse(BaseModel):
@@ -197,8 +197,8 @@ async def initiate_payment(
             detail=f"Cannot initiate payment: payment_status is '{ticket.payment_status.value}'",
         )
 
-    email = body.email or f"{ticket.passenger_phone}@routepass.app"
-    reference = f"RP-{ticket.id}-{uuid4().hex[:8]}"
+    email = body.email or f"{ticket.passenger_phone}@kwanix.app"
+    reference = f"KX-{ticket.id}-{uuid4().hex[:8]}"
     amount_pesewas = int(ticket.fare_ghs * 100)
 
     data = await initialize_transaction(
@@ -593,7 +593,7 @@ async def share_ticket(
             route = f"{dep_name} → {dst_name}"
 
     message = (
-        f"Your RoutePass ticket is ready!\n"
+        f"Your Kwanix ticket is ready!\n"
         f"Seat {ticket.seat_number}"
         + (f" | {route}" if route else "")
         + f"\nView & save your ticket:\n{ticket_url}"

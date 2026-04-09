@@ -109,13 +109,13 @@ class TestAuthEndpoints:
 class TestPublicTrackingEndpoint:
     @pytest.mark.asyncio
     async def test_unknown_tracking_id_returns_404(self, client):
-        response = await client.get("/api/v1/track/RP-FAKE-0000-00000")
+        response = await client.get("/api/v1/track/KX-FAKE-0000-00000")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_no_auth_required(self, client):
         """Public endpoint — must work without Authorization header."""
-        response = await client.get("/api/v1/track/RP-FAKE-0000-00000")
+        response = await client.get("/api/v1/track/KX-FAKE-0000-00000")
         # 404 is fine — the point is it's not 401/403
         assert response.status_code != 401
         assert response.status_code != 403
@@ -128,7 +128,7 @@ class TestPublicTrackingEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-99001",
+            tracking_number="KX-TST-2026-99001",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -142,10 +142,10 @@ class TestPublicTrackingEndpoint:
         db.add(parcel)
         await db.flush()
 
-        response = await client.get("/api/v1/track/RP-TST-2026-99001")
+        response = await client.get("/api/v1/track/KX-TST-2026-99001")
         assert response.status_code == 200
         body = response.json()
-        assert body["tracking_number"] == "RP-TST-2026-99001"
+        assert body["tracking_number"] == "KX-TST-2026-99001"
         assert body["status"] == "pending"
         assert body["origin"] == "Accra"
         assert body["destination"] == "Prestea"
@@ -193,7 +193,7 @@ class TestStationsEndpoints:
         def _parcel(status: ParcelStatus, n: int) -> Parcel:
             return Parcel(
                 company_id=company.id,
-                tracking_number=f"RP-TST-SUM-{n:05d}",
+                tracking_number=f"KX-TST-SUM-{n:05d}",
                 sender_name="Sender",
                 sender_phone="233541234567",
                 receiver_name="Receiver",
@@ -451,7 +451,7 @@ class TestParcelSearchEndpoint:
                 station_accra,
                 station_prestea,
                 clerk_user,
-                "RP-TST-SRCH-00001",
+                "KX-TST-SRCH-00001",
                 "Kwame",
                 "Akosua",
                 ParcelStatus.pending,
@@ -463,7 +463,7 @@ class TestParcelSearchEndpoint:
                 station_accra,
                 station_prestea,
                 clerk_user,
-                "RP-TST-SRCH-00002",
+                "KX-TST-SRCH-00002",
                 "Kofi",
                 "Ama",
                 ParcelStatus.pending,
@@ -478,7 +478,7 @@ class TestParcelSearchEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert len(body) == 1
-        assert body[0]["tracking_number"] == "RP-TST-SRCH-00001"
+        assert body[0]["tracking_number"] == "KX-TST-SRCH-00001"
 
     @pytest.mark.asyncio
     async def test_search_by_sender_name(
@@ -492,7 +492,7 @@ class TestParcelSearchEndpoint:
                 station_accra,
                 station_prestea,
                 clerk_user,
-                "RP-TST-SRCH-00003",
+                "KX-TST-SRCH-00003",
                 "UniqueKwame",
                 "Receiver",
                 ParcelStatus.pending,
@@ -520,7 +520,7 @@ class TestParcelSearchEndpoint:
                 station_accra,
                 station_prestea,
                 clerk_user,
-                "RP-TST-SRCH-00004",
+                "KX-TST-SRCH-00004",
                 "Alpha",
                 "Beta",
                 ParcelStatus.arrived,
@@ -532,7 +532,7 @@ class TestParcelSearchEndpoint:
                 station_accra,
                 station_prestea,
                 clerk_user,
-                "RP-TST-SRCH-00005",
+                "KX-TST-SRCH-00005",
                 "Gamma",
                 "Delta",
                 ParcelStatus.pending,
@@ -561,7 +561,7 @@ class TestParcelSearchEndpoint:
                     station_accra,
                     station_prestea,
                     clerk_user,
-                    f"RP-TST-PAGE-{i:05d}",
+                    f"KX-TST-PAGE-{i:05d}",
                     f"Sender{i}",
                     f"Recv{i}",
                     ParcelStatus.pending,
@@ -615,7 +615,7 @@ class TestCreateParcelEndpoint:
         assert response.status_code == 201
         body = response.json()
         assert "tracking_number" in body
-        assert body["tracking_number"].startswith("RP-TST-")
+        assert body["tracking_number"].startswith("KX-TST-")
         assert body["qr_code_base64"] is not None
         assert len(body["qr_code_base64"]) > 0
 
@@ -652,7 +652,7 @@ class TestCreateParcelEndpoint:
 
 class TestLoadParcelEndpoint:
     def _make_parcel(
-        self, company, station_accra, station_prestea, clerk_user, tracking="RP-TST-2026-20001"
+        self, company, station_accra, station_prestea, clerk_user, tracking="KX-TST-2026-20001"
     ):
         from app.models.parcel import Parcel, ParcelStatus
 
@@ -710,7 +710,7 @@ class TestLoadParcelEndpoint:
     ):
         # Parcel goes to Prestea; trip goes to Accra (mismatch)
         parcel = self._make_parcel(
-            company, station_accra, station_prestea, clerk_user, "RP-TST-2026-20002"
+            company, station_accra, station_prestea, clerk_user, "KX-TST-2026-20002"
         )
         trip = self._make_trip(company, vehicle, station_prestea, station_accra)
         db.add(parcel)
@@ -770,7 +770,7 @@ class TestUnloadParcelEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-30001",
+            tracking_number="KX-TST-2026-30001",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -811,7 +811,7 @@ class TestCollectParcelEndpoint:
         otp,
         expires_at,
         attempt_count=0,
-        tracking="RP-TST-2026-40001",
+        tracking="KX-TST-2026-40001",
     ):
         from app.models.parcel import Parcel, ParcelStatus
 
@@ -868,7 +868,7 @@ class TestCollectParcelEndpoint:
             clerk_user,
             otp_code,
             expires_at,
-            tracking="RP-TST-2026-40002",
+            tracking="KX-TST-2026-40002",
         )
         db.add(parcel)
         await db.flush()
@@ -895,7 +895,7 @@ class TestCollectParcelEndpoint:
             otp_code,
             expires_at,
             attempt_count=5,  # already locked
-            tracking="RP-TST-2026-40003",
+            tracking="KX-TST-2026-40003",
         )
         db.add(parcel)
         await db.flush()
@@ -939,7 +939,7 @@ class TestParcelLogsEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-50001",
+            tracking_number="KX-TST-2026-50001",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -992,7 +992,7 @@ class TestParcelLogsEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-50002",
+            tracking_number="KX-TST-2026-50002",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -1025,7 +1025,7 @@ class TestReturnParcelEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-60001",
+            tracking_number="KX-TST-2026-60001",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -1055,7 +1055,7 @@ class TestReturnParcelEndpoint:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-60002",
+            tracking_number="KX-TST-2026-60002",
             sender_name="Kwame",
             sender_phone="233541234567",
             receiver_name="Akosua",
@@ -1320,7 +1320,7 @@ class TestParcelReceiptEndpoint:
 
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-RCPT-001",
+            tracking_number="KX-TST-RCPT-001",
             sender_name="Sender Name",
             sender_phone="233541111111",
             receiver_name="Receiver Name",
@@ -1341,7 +1341,7 @@ class TestParcelReceiptEndpoint:
 
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-RCPT-002",
+            tracking_number="KX-TST-RCPT-002",
             sender_name="Sender",
             sender_phone="233541111112",
             receiver_name="Receiver",
@@ -1427,7 +1427,7 @@ class TestParcelExportEndpoint:
 
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-EXP-001",
+            tracking_number="KX-TST-EXP-001",
             sender_name="Export Sender",
             sender_phone="233541234567",
             receiver_name="Export Receiver",
@@ -1453,7 +1453,7 @@ class TestParcelExportEndpoint:
         assert "parcels.csv" in response.headers["content-disposition"]
         lines = response.text.strip().splitlines()
         assert lines[0].startswith("tracking_number")
-        assert any("RP-TST-EXP-001" in line for line in lines[1:])
+        assert any("KX-TST-EXP-001" in line for line in lines[1:])
 
     @pytest.mark.asyncio
     async def test_export_filters_by_status(
@@ -1464,7 +1464,7 @@ class TestParcelExportEndpoint:
         db.add(
             Parcel(
                 company_id=company.id,
-                tracking_number="RP-TST-EXP-002",
+                tracking_number="KX-TST-EXP-002",
                 sender_name="Sender2",
                 sender_phone="233541234568",
                 receiver_name="Receiver2",
@@ -1513,7 +1513,7 @@ class TestAdminStats:
         from app.models.user import User, UserRole
         from app.services.auth_service import hash_password
 
-        company = Company(name="RoutePass HQ", company_code="RPH", is_active=True)
+        company = Company(name="Kwanix HQ", company_code="RPH", is_active=True)
         db.add(company)
         await db.flush()
 
@@ -1686,7 +1686,7 @@ class TestParcelOverdue:
 
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-ODUE-001",
+            tracking_number="KX-TST-ODUE-001",
             sender_name="Sender",
             sender_phone="233541111201",
             receiver_name="Receiver",
@@ -1709,7 +1709,7 @@ class TestParcelOverdue:
 
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-ODUE-002",
+            tracking_number="KX-TST-ODUE-002",
             sender_name="Sender2",
             sender_phone="233541111203",
             receiver_name="Receiver2",
@@ -1864,7 +1864,7 @@ class TestPdfCompanyBranding:
         from app.utils.pdf import generate_receipt_pdf
 
         class FakeParcel:
-            tracking_number = "RP-TEST-001"
+            tracking_number = "KX-TEST-001"
             sender_name = "Sender"
             receiver_name = "Receiver"
             fee_ghs = 10.0
@@ -1881,7 +1881,7 @@ class TestPdfCompanyBranding:
         from app.utils.pdf import generate_receipt_pdf
 
         class FakeParcel:
-            tracking_number = "RP-TEST-001"
+            tracking_number = "KX-TEST-001"
             sender_name = "Sender"
             receiver_name = "Receiver"
             fee_ghs = 10.0
@@ -1987,7 +1987,7 @@ class TestSlaReport:
         # On-time: arrived within 48h of creation
         on_time = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-SLA-001",
+            tracking_number="KX-TST-SLA-001",
             sender_name="S1",
             sender_phone="233541110001",
             receiver_name="R1",
@@ -2002,7 +2002,7 @@ class TestSlaReport:
         # Late: arrived more than 48h after creation
         late = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-SLA-002",
+            tracking_number="KX-TST-SLA-002",
             sender_name="S2",
             sender_phone="233541110003",
             receiver_name="R2",
@@ -2140,7 +2140,7 @@ class TestStationThroughput:
         # A parcel arrived at station_accra (received)
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-THRU-001",
+            tracking_number="KX-TST-THRU-001",
             sender_name="S",
             sender_phone="233541000001",
             receiver_name="R",
@@ -2186,7 +2186,7 @@ class TestParcelPickupReminder:
         now = datetime.now(UTC)
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-REMIND-001",
+            tracking_number="KX-TST-REMIND-001",
             sender_name="Sender",
             sender_phone="233541000010",
             receiver_name="Receiver",
@@ -2210,7 +2210,7 @@ class TestParcelPickupReminder:
         now = datetime.now(UTC)
         p = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-REMIND-002",
+            tracking_number="KX-TST-REMIND-002",
             sender_name="Sender2",
             sender_phone="233541000012",
             receiver_name="Receiver2",
@@ -2620,7 +2620,7 @@ class TestPhaseQ:
             fare_ghs=30.0,
             source=TicketSource.online,
             payment_status=PaymentStatus.paid,
-            payment_ref="RP-999-abc12345",
+            payment_ref="KX-999-abc12345",
         )
         db.add(ticket)
         await db.flush()
@@ -2838,7 +2838,7 @@ class TestTicketEmailReceipt:
                 departure_time="06 Apr 2026 08:00",
                 seat_number=5,
                 fare_ghs=30.0,
-                payment_ref="RP-123",
+                payment_ref="KX-123",
                 company_name="STC",
             )
         mock_client.post.assert_called_once()

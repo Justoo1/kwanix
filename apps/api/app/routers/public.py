@@ -480,8 +480,8 @@ async def book_ticket(
     db.add(ticket)
     await db.flush()  # get ticket.id before commit
 
-    email = body.passenger_email or f"{ticket.passenger_phone}@routepass.app"
-    reference = f"RP-{ticket.id}-{uuid4().hex[:8]}"
+    email = body.passenger_email or f"{ticket.passenger_phone}@kwanix.app"
+    reference = f"KX-{ticket.id}-{uuid4().hex[:8]}"
     amount_pesewas = int(float(trip.price_ticket_base) * 100)
     callback_url = f"{settings.public_app_url}/payment/success?reference={reference}"
     cancel_action = f"{settings.public_app_url}/payment/cancelled"

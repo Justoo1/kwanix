@@ -129,7 +129,7 @@ export default async function TicketDetailPage({
                 Bus Ticket
               </span>
               <span className="text-white text-sm font-semibold opacity-90">
-                {ticket.company_name ?? "RoutePass"}
+                {ticket.company_name ?? "Kwanix"}
               </span>
             </div>
 

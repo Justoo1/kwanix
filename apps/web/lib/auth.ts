@@ -1,8 +1,8 @@
 /**
- * lib/auth.ts — Central authentication surface for RoutePass.
+ * lib/auth.ts — Central authentication surface for Kwanix.
  *
  * The FastAPI backend issues JWTs via POST /api/v1/auth/login.
- * We store the access token inside an encrypted rp_session HttpOnly cookie
+ * We store the access token inside an encrypted kx_session HttpOnly cookie
  * (managed by lib/session.ts). This module provides the auth helpers
  * consumed by Server Components, Server Actions, and the proxy.
  *

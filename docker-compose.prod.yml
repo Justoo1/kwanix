@@ -1,21 +1,18 @@
 services:
-  # In production, prefer a managed database (AWS RDS, Supabase, Neon, etc.).
-  # Uncomment the postgres service only if you are self-hosting the database.
-  #
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_USER: ${POSTGRES_USER}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #     POSTGRES_DB: ${POSTGRES_DB}
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   restart: always
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
 
   redis:
     image: redis:7-alpine
@@ -33,7 +30,7 @@ services:
       DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       ARKESEL_API_KEY: ${ARKESEL_API_KEY}
-      ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-RoutePass}
+      ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-Kwanix}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
       PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-production}
@@ -44,6 +41,11 @@ services:
       MANIFEST_EMAIL: ${MANIFEST_EMAIL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       APP_ROLE_PASSWORD: ${APP_ROLE_PASSWORD}
+    ports:
+      - "127.0.0.1:8100:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: always
     deploy:
       resources:
@@ -63,6 +65,8 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       NODE_ENV: production
       SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+    ports:
+      - "127.0.0.1:3100:3000"
     depends_on:
       - api
     restart: always
@@ -71,19 +75,6 @@ services:
         limits:
           memory: 256M
 
-  nginx:
-    image: nginx:1.27-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./infrastructure/nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./infrastructure/nginx/certs:/etc/nginx/certs:ro
-    depends_on:
-      - api
-      - web
-    restart: always
-
 volumes:
   redis_data:
-  # postgres_data:  # uncomment if self-hosting postgres
+  postgres_data:

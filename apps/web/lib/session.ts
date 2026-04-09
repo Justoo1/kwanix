@@ -12,7 +12,7 @@ const API_BASE =
 
 const REFRESH_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 
-const COOKIE_NAME = "rp_session";
+const COOKIE_NAME = "kx_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (matches refresh token lifetime)
 
 function getSecretKey() {
@@ -21,7 +21,7 @@ function getSecretKey() {
     if (process.env.NODE_ENV === "production") {
       throw new Error("SESSION_SECRET environment variable must be set in production");
     }
-    return new TextEncoder().encode("routepass-dev-secret-32chars!!");
+    return new TextEncoder().encode("kwanix-dev-secret-32chars!!");
   }
   return new TextEncoder().encode(secret);
 }

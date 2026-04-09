@@ -50,7 +50,7 @@ function downloadCSV(parcels: ParcelRow[], from: string, to: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `routepass-parcels-${from}-to-${to}.csv`;
+  a.download = `kwanix-parcels-${from}-to-${to}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

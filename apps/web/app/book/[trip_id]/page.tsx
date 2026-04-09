@@ -226,7 +226,7 @@ export default function BookTripPage() {
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center gap-2">
             <Bus className="h-5 w-5 text-emerald-600" />
-            <span className="font-bold text-zinc-900 text-lg">RoutePass</span>
+            <span className="font-bold text-zinc-900 text-lg">Kwanix</span>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5">Online ticket booking</p>
         </div>

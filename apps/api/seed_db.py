@@ -111,9 +111,9 @@ async def seed():
         super_admin = User(
             company_id=None,
             station_id=None,
-            full_name="RoutePass Admin",
+            full_name="Kwanix Admin",
             phone="233200000000",
-            email="admin@routepass.io",
+            email="admin@kwanix.io",
             hashed_password=pwd_context.hash("admin123!"),
             role=UserRole.super_admin,
         )
@@ -122,7 +122,7 @@ async def seed():
             station_id=None,
             full_name="STC Manager",
             phone="233201111111",
-            email="manager@stc.routepass.io",
+            email="manager@stc.kwanix.io",
             hashed_password=pwd_context.hash("manager123!"),
             role=UserRole.company_admin,
         )
@@ -131,7 +131,7 @@ async def seed():
             station_id=accra.id,
             full_name="Ama Clerk",
             phone="233542222222",
-            email="ama@stc.routepass.io",
+            email="ama@stc.kwanix.io",
             hashed_password=pwd_context.hash("clerk123!"),
             role=UserRole.station_clerk,
         )
@@ -149,9 +149,9 @@ async def seed():
 
     print("\n✅ Seed complete.")
     print("\nDemo credentials:")
-    print("  super_admin  : admin@routepass.io       / admin123!")
-    print("  company_admin: manager@stc.routepass.io / manager123!")
-    print("  clerk        : ama@stc.routepass.io     / clerk123!")
+    print("  super_admin  : admin@kwanix.io       / admin123!")
+    print("  company_admin: manager@stc.kwanix.io / manager123!")
+    print("  clerk        : ama@stc.kwanix.io     / clerk123!")
 
 
 if __name__ == "__main__":

@@ -127,7 +127,7 @@ def msg_parcel_logged(sender_name: str, destination: str, tracking_id: str) -> s
     url = f"{settings.public_app_url}/track/{tracking_id}"
     return (
         f"Hi! A parcel from {sender_name} has been logged for {destination}. "
-        f"Track it here: {url} - RoutePass"
+        f"Track it here: {url} - Kwanix"
     )
 
 
@@ -135,21 +135,21 @@ def msg_parcel_in_transit(plate_number: str, destination: str, tracking_id: str)
     url = f"{settings.public_app_url}/track/{tracking_id}"
     return (
         f"Good news! Your parcel ({tracking_id}) is on Bus {plate_number} heading to "
-        f"{destination}. Track it here: {url} - RoutePass"
+        f"{destination}. Track it here: {url} - Kwanix"
     )
 
 
 def msg_parcel_arrived(station_name: str, otp_code: str, tracking_id: str) -> str:
     return (
         f"Your parcel ({tracking_id}) has arrived at {station_name}. "
-        f"Collection code: {otp_code}. Show this to the clerk. - RoutePass"
+        f"Collection code: {otp_code}. Show this to the clerk. - Kwanix"
     )
 
 
 def msg_parcel_returned(tracking_id: str) -> str:
     return (
         f"Your parcel ({tracking_id}) could not be delivered and has been returned to the sender. "
-        f"Please contact your station for more information. - RoutePass"
+        f"Please contact your station for more information. - Kwanix"
     )
 
 
@@ -160,13 +160,13 @@ def msg_parcel_return_sender(tracking_id: str, reason: str | None) -> str:
     )
     if reason:
         base += f" Reason: {reason}."
-    return base + " - RoutePass"
+    return base + " - Kwanix"
 
 
 def msg_parcel_pickup_reminder(tracking_id: str, station_name: str) -> str:
     return (
         f"Reminder: your parcel ({tracking_id}) is waiting for collection at "
-        f"{station_name}. Please collect it at your earliest convenience. - RoutePass"
+        f"{station_name}. Please collect it at your earliest convenience. - Kwanix"
     )
 
 
@@ -174,14 +174,14 @@ def msg_trip_departed(plate_number: str, from_station: str, eta_str: str | None 
     msg = f"Your bus {plate_number} has departed {from_station}."
     if eta_str:
         msg += f" ETA approx {eta_str}."
-    msg += " - RoutePass"
+    msg += " - Kwanix"
     return msg
 
 
 def msg_trip_arrived(destination: str) -> str:
     return (
         f"Your bus has arrived at {destination}. "
-        "Please proceed to collect your luggage. - RoutePass"
+        "Please proceed to collect your luggage. - Kwanix"
     )
 
 
@@ -191,5 +191,5 @@ def msg_trip_reminder(
     first = passenger_name.split()[0] if passenger_name else "Passenger"
     return (
         f"Hi {first}, reminder: your trip from {from_station} to {to_station} departs at "
-        f"{departure_time}. Please arrive 30 minutes early. - RoutePass"
+        f"{departure_time}. Please arrive 30 minutes early. - Kwanix"
     )

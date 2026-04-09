@@ -19,7 +19,7 @@ from app.services.parcel_service import (
 async def _make_parcel(db, company, station_accra, station_prestea, clerk_user) -> Parcel:
     p = Parcel(
         company_id=company.id,
-        tracking_number="RP-TST-2026-00001",
+        tracking_number="KX-TST-2026-00001",
         sender_name="Kwesi Sender",
         sender_phone="233541111111",
         receiver_name="Ama Receiver",
@@ -269,5 +269,5 @@ class TestCollectParcel:
     @pytest.mark.asyncio
     async def test_unknown_tracking_number_raises_404(self, db):
         with pytest.raises(HTTPException) as exc_info:
-            await collect_parcel(db, "RP-FAKE-0000-00000", "123456", 1)
+            await collect_parcel(db, "KX-FAKE-0000-00000", "123456", 1)
         assert exc_info.value.status_code == 404

@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RoutePass",
+  title: "Kwanix",
   description: "Unified Transit Management — Ticketing & Parcel Logistics",
 };
 

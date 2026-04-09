@@ -4,7 +4,7 @@ import PublicNav from "@/components/public-nav";
 import CompanySearch from "./company-search";
 
 export const metadata: Metadata = {
-  title: "RoutePass — Book Your Bus Ticket Online",
+  title: "Kwanix — Book Your Bus Ticket Online",
   description:
     "Find and book bus tickets across Ghana's transport companies. Pay securely online.",
 };
@@ -88,7 +88,7 @@ export default async function HomePage() {
       {/* Footer */}
       <footer className="border-t border-zinc-100 bg-white mt-auto">
         <div className="max-w-6xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-400">
-          <span>© {new Date().getFullYear()} RoutePass</span>
+          <span>© {new Date().getFullYear()} Kwanix</span>
           <div className="flex gap-4">
             <Link href="/discover" className="hover:text-zinc-700">Find a trip</Link>
             <Link href="/login" className="hover:text-zinc-700">Sign in</Link>

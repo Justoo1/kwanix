@@ -22,19 +22,19 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 # Non-root user for security
-RUN addgroup --system routpass && adduser --system --ingroup routpass routpass
+RUN addgroup --system kwanix && adduser --system --ingroup kwanix kwanix
 
 # Copy the virtual environment from the builder stage
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy only what the app needs at runtime
-COPY --chown=routpass:routpass app/ ./app/
-COPY --chown=routpass:routpass alembic/ ./alembic/
-COPY --chown=routpass:routpass alembic.ini ./alembic.ini
-COPY --chown=routpass:routpass entrypoint.sh ./entrypoint.sh
+COPY --chown=kwanix:kwanix app/ ./app/
+COPY --chown=kwanix:kwanix alembic/ ./alembic/
+COPY --chown=kwanix:kwanix alembic.ini ./alembic.ini
+COPY --chown=kwanix:kwanix entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-USER routpass
+USER kwanix
 
 EXPOSE 8000
 

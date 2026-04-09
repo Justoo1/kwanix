@@ -84,7 +84,7 @@ async def paid_ticket(db, company, loading_trip, clerk_user):
         fare_ghs=30.0,
         source=TicketSource.counter,
         payment_status=PaymentStatus.paid,
-        payment_ref="RP-test-ref-001",
+        payment_ref="KX-test-ref-001",
     )
     db.add(t)
     await db.flush()

@@ -283,7 +283,7 @@ async def create_subaccount(
     POST /subaccount — creates a split-payment subaccount for a transport company.
 
     percentage_charge=0.0 means 100% of each ticket payment flows to the company
-    (RoutePass earns only through subscription fees, not per-transaction cuts).
+    (Kwanix earns only through subscription fees, not per-transaction cuts).
 
     Returns the Paystack data dict (including subaccount_code).
     """

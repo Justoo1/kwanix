@@ -23,9 +23,9 @@ interface PublicTicket {
   brand_color: string | null;
 }
 
-/** Parse ticket ID from reference format: RP-{ticket_id}-{hex} */
+/** Parse ticket ID from reference format: KX-{ticket_id}-{hex} */
 function parseTicketId(reference: string): number | null {
-  const match = /^RP-(\d+)-/.exec(reference);
+  const match = /^KX-(\d+)-/.exec(reference);
   if (!match) return null;
   const id = parseInt(match[1], 10);
   return isNaN(id) ? null : id;
@@ -127,7 +127,7 @@ function PaymentSuccessContent() {
     <div className="bg-white border-b border-zinc-200">
       <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-2">
         <Bus className="h-5 w-5 text-emerald-600" />
-        <span className="font-bold text-zinc-900 text-lg">RoutePass</span>
+        <span className="font-bold text-zinc-900 text-lg">Kwanix</span>
       </div>
     </div>
   );
@@ -208,7 +208,7 @@ function PaymentSuccessContent() {
                   Bus Ticket
                 </span>
                 <span className="text-white text-sm font-semibold opacity-90">
-                  {ticket.company_name ?? "RoutePass"}
+                  {ticket.company_name ?? "Kwanix"}
                 </span>
               </div>
 

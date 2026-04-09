@@ -29,13 +29,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # routpass_app is the non-superuser RLS role used by the live app.
-      # Migrations use routpass (superuser) via DATABASE_ADMIN_URL.
+      # kwanix_app is the non-superuser RLS role used by the live app.
+      # Migrations use kwanix (superuser) via DATABASE_ADMIN_URL.
       DATABASE_URL: ${DATABASE_URL}
       DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       ARKESEL_API_KEY: ${ARKESEL_API_KEY:-}
-      ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-RoutePass}
+      ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-Kwanix}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-true}

@@ -44,7 +44,7 @@ export default function TrackLandingPage() {
               type="text"
               value={trackingId}
               onChange={(e) => setTrackingId(e.target.value)}
-              placeholder="e.g. RP-2024-ABCD1234"
+              placeholder="e.g. KX-2024-ABCD1234"
               className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-300"
               autoFocus
             />

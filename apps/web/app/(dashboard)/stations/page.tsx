@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { StationsView } from "./stations-view";
 
-export const metadata: Metadata = { title: "Stations — RoutePass" };
+export const metadata: Metadata = { title: "Stations — Kwanix" };
 
 const ALLOWED_ROLES = ["station_manager", "company_admin", "super_admin"];
 const CREATE_ROLES = ["company_admin", "super_admin"];

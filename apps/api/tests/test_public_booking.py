@@ -67,7 +67,7 @@ class TestPublicBookingFlow:
             fare_ghs=50.0,
             source=TicketSource.online,
             payment_status=PaymentStatus.paid,
-            payment_ref="RP-TEST-PAID-001",
+            payment_ref="KX-TEST-PAID-001",
         )
         db.add(ticket)
         await db.flush()
@@ -85,7 +85,7 @@ class TestPublicBookingFlow:
             fare_ghs=50.0,
             source=TicketSource.online,
             payment_status=PaymentStatus.pending,
-            payment_ref="RP-999-webhook01",
+            payment_ref="KX-999-webhook01",
             booking_expires_at=datetime.now(UTC) + timedelta(minutes=15),
         )
         db.add(ticket)
@@ -114,7 +114,7 @@ class TestPublicBookingFlow:
             "data": {
                 "authorization_url": "https://checkout.paystack.com/test123",
                 "access_code": "test_access",
-                "reference": "RP-test-ref",
+                "reference": "KX-test-ref",
             }
         }
 
@@ -226,7 +226,7 @@ class TestPublicBookingFlow:
             "data": {
                 "authorization_url": "https://checkout.paystack.com/test456",
                 "access_code": "test_access2",
-                "reference": "RP-test-ref2",
+                "reference": "KX-test-ref2",
             }
         }
 

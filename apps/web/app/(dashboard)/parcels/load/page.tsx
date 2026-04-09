@@ -592,7 +592,7 @@ function CollectTab() {
           <input
             value={trackingNumber}
             onChange={(e) => { setTrackingNumber(e.target.value); setDone(false); mutation.reset(); }}
-            placeholder="RP-STC-2024-001"
+            placeholder="KX-STC-2024-001"
             className="block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
           />
         </div>

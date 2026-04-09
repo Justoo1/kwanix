@@ -27,7 +27,7 @@ def generate_manifest_pdf(
     styles = getSampleStyleSheet()
     elements = []
 
-    title_company = company_name or "RoutePass"
+    title_company = company_name or "Kwanix"
     elements.append(Paragraph(f"{title_company} — Trip Manifest", styles["Title"]))
     elements.append(Spacer(1, 0.4 * cm))
 
@@ -105,7 +105,7 @@ def generate_receipt_pdf(
     styles = getSampleStyleSheet()
     elements = []
 
-    title_company = company_name or "RoutePass"
+    title_company = company_name or "Kwanix"
     elements.append(Paragraph(f"{title_company} — Parcel Collection Receipt", styles["Title"]))
     elements.append(Spacer(1, 0.5 * cm))
 

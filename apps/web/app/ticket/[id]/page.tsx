@@ -24,7 +24,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  return { title: `Ticket #${id} — RoutePass` };
+  return { title: `Ticket #${id} — Kwanix` };
 }
 
 /** Simple deterministic barcode */
@@ -99,7 +99,7 @@ export default async function PublicTicketPage({
       {/* Company header */}
       <div className="mb-4 text-center">
         <p className="text-sm font-semibold text-zinc-500">
-          {ticket.company_name ?? "RoutePass"}
+          {ticket.company_name ?? "Kwanix"}
         </p>
       </div>
 
@@ -118,7 +118,7 @@ export default async function PublicTicketPage({
               Bus Ticket
             </p>
             <p className="text-white text-xs opacity-80 mt-0.5">
-              {ticket.company_name ?? "RoutePass"}
+              {ticket.company_name ?? "Kwanix"}
             </p>
           </div>
           <div
@@ -242,7 +242,7 @@ export default async function PublicTicketPage({
       </div>
 
       <p className="text-xs text-zinc-400 mt-6 text-center">
-        Powered by RoutePass · For queries, contact your station
+        Powered by Kwanix · For queries, contact your station
       </p>
     </div>
   );

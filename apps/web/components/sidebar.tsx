@@ -124,7 +124,7 @@ function SidebarPanel({ role, onClose }: SidebarPanelProps) {
             <Route className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
           <span className="text-base font-bold tracking-tight text-sidebar-foreground">
-            RoutePass
+            Kwanix
           </span>
         </Link>
 
@@ -220,7 +220,7 @@ export function MobileNav({ role }: { role: UserRole }) {
             <Route className="h-3 w-3 text-sidebar-primary-foreground" />
           </div>
           <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
-            RoutePass
+            Kwanix
           </span>
         </div>
       </header>

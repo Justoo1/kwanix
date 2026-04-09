@@ -48,7 +48,7 @@ class TestDispatchSms:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-50001",
+            tracking_number="KX-TST-2026-50001",
             sender_name="Ama",
             sender_phone="233541234567",
             receiver_name="Kofi",
@@ -132,7 +132,7 @@ class TestPhoneNormalisationEndToEnd:
     ):
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-50002",
+            tracking_number="KX-TST-2026-50002",
             sender_name="Ama",
             sender_phone="233541234567",
             receiver_name="Kofi",
@@ -192,7 +192,7 @@ class TestPhoneNormalisationEndToEnd:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-2026-50003",
+            tracking_number="KX-TST-2026-50003",
             sender_name="Ama",
             sender_phone="233541234567",
             receiver_name="Kofi",
@@ -232,20 +232,20 @@ class TestParcelReturnSenderSms:
     def test_message_includes_tracking_number(self):
         from app.integrations.arkesel import msg_parcel_return_sender
 
-        msg = msg_parcel_return_sender("RP-TST-0001", None)
-        assert "RP-TST-0001" in msg
-        assert "RoutePass" in msg
+        msg = msg_parcel_return_sender("KX-TST-0001", None)
+        assert "KX-TST-0001" in msg
+        assert "Kwanix" in msg
 
     def test_message_includes_reason_when_provided(self):
         from app.integrations.arkesel import msg_parcel_return_sender
 
-        msg = msg_parcel_return_sender("RP-TST-0001", "Address not found")
+        msg = msg_parcel_return_sender("KX-TST-0001", "Address not found")
         assert "Address not found" in msg
 
     def test_message_omits_reason_line_when_none(self):
         from app.integrations.arkesel import msg_parcel_return_sender
 
-        msg = msg_parcel_return_sender("RP-TST-0001", None)
+        msg = msg_parcel_return_sender("KX-TST-0001", None)
         assert "Reason:" not in msg
 
     @pytest.mark.asyncio
@@ -256,7 +256,7 @@ class TestParcelReturnSenderSms:
 
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-G3-001",
+            tracking_number="KX-TST-G3-001",
             sender_name="Return Sender",
             sender_phone="233541111222",
             receiver_name="Return Receiver",

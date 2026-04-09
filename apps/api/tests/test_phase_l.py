@@ -82,7 +82,7 @@ async def loading_trip(db, company, vehicle, station_accra, station_prestea):
 async def in_transit_parcel(db, company, station_accra, station_prestea, clerk_user, loading_trip):
     p = Parcel(
         company_id=company.id,
-        tracking_number="RP-TST-L-00001",
+        tracking_number="KX-TST-L-00001",
         sender_name="Kweku Send",
         sender_phone="233541110001",
         receiver_name="Ama Recv",
@@ -340,7 +340,7 @@ class TestBatchUnload:
         # A pending parcel cannot be unloaded
         pending = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-L-00099",
+            tracking_number="KX-TST-L-00099",
             sender_name="S",
             sender_phone="233541110099",
             receiver_name="R",
@@ -424,7 +424,7 @@ class TestReturnReasonTracking:
     ):
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-L-RETURN",
+            tracking_number="KX-TST-L-RETURN",
             sender_name="Kwesi S",
             sender_phone="233541110200",
             receiver_name="Ama R",
@@ -439,7 +439,7 @@ class TestReturnReasonTracking:
         db.add(parcel)
         await db.flush()
 
-        response = await client.get("/api/v1/track/RP-TST-L-RETURN")
+        response = await client.get("/api/v1/track/KX-TST-L-RETURN")
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "returned"
@@ -451,7 +451,7 @@ class TestReturnReasonTracking:
     ):
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-L-PENDING",
+            tracking_number="KX-TST-L-PENDING",
             sender_name="Kwesi S",
             sender_phone="233541110300",
             receiver_name="Ama R",
@@ -465,7 +465,7 @@ class TestReturnReasonTracking:
         db.add(parcel)
         await db.flush()
 
-        response = await client.get("/api/v1/track/RP-TST-L-PENDING")
+        response = await client.get("/api/v1/track/KX-TST-L-PENDING")
         assert response.status_code == 200
         body = response.json()
         assert body["return_reason"] is None
@@ -477,7 +477,7 @@ class TestReturnReasonTracking:
         """Return endpoint should set return_reason on the parcel."""
         parcel = Parcel(
             company_id=company.id,
-            tracking_number="RP-TST-L-RET2",
+            tracking_number="KX-TST-L-RET2",
             sender_name="S",
             sender_phone="233541110400",
             receiver_name="R",
@@ -499,6 +499,6 @@ class TestReturnReasonTracking:
         assert response.status_code == 200
 
         # Verify via tracking
-        track_resp = await client.get("/api/v1/track/RP-TST-L-RET2")
+        track_resp = await client.get("/api/v1/track/KX-TST-L-RET2")
         assert track_resp.status_code == 200
         assert track_resp.json()["return_reason"] == "Address incorrect"

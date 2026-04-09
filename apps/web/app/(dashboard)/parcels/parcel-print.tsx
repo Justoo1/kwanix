@@ -68,7 +68,7 @@ export default function ParcelPrint({
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ textAlign: "center", marginBottom: "1.5mm" }}>
         <div style={{ fontWeight: "bold", fontSize: "12pt", letterSpacing: "2px" }}>
-          ROUTEPASS
+          KWANIX
         </div>
         <div style={{ fontSize: "7pt", color: "#444" }}>Parcel Receipt</div>
       </div>
@@ -134,7 +134,7 @@ export default function ParcelPrint({
       <div style={{ textAlign: "center", fontSize: "7pt", color: "#555" }}>
         <div>{now}</div>
         <div style={{ marginTop: "1mm" }}>Scan QR to track your parcel</div>
-        <div>routepass.app/track</div>
+        <div>kwanix.app/track</div>
       </div>
     </div>
   );

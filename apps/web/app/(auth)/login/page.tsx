@@ -4,7 +4,7 @@ import { Route, Bus, MapPin, Package } from "lucide-react";
 import LoginForm from "@/components/login-form";
 
 export const metadata: Metadata = {
-  title: "Sign in — RoutePass",
+  title: "Sign in — Kwanix",
 };
 
 const features = [
@@ -34,7 +34,7 @@ export default function LoginPage() {
             <Route className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight text-sidebar-foreground">
-            RoutePass
+            Kwanix
           </span>
         </div>
 
@@ -66,7 +66,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="relative text-xs text-sidebar-foreground/30">
-          © {new Date().getFullYear()} RoutePass · All rights reserved
+          © {new Date().getFullYear()} Kwanix · All rights reserved
         </p>
       </div>
 
@@ -79,7 +79,7 @@ export default function LoginPage() {
               <Route className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="text-lg font-bold tracking-tight text-foreground">
-              RoutePass
+              Kwanix
             </span>
           </div>
 

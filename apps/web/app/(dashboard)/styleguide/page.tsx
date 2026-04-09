@@ -81,7 +81,7 @@ export default function StyleguidePage() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Design System</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          RoutePass UI primitives — color tokens, components, and states.
+          Kwanix UI primitives — color tokens, components, and states.
         </p>
       </div>
 
