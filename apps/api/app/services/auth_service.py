@@ -26,6 +26,7 @@ def create_access_token(user: User) -> str:
         "company_id": user.company_id,
         "station_id": user.station_id,
         "role": user.role.value,
+        "token_version": user.token_version,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -36,6 +37,7 @@ def create_refresh_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "type": "refresh",
+        "token_version": user.token_version,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)

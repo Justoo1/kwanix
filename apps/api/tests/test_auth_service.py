@@ -41,7 +41,9 @@ class TestPasswordHashing:
 
 class TestCreateAccessToken:
     def _make_user(self, role=UserRole.station_clerk, company_id=1, station_id=2):
-        return SimpleNamespace(id=99, company_id=company_id, station_id=station_id, role=role)
+        return SimpleNamespace(
+            id=99, company_id=company_id, station_id=station_id, role=role, token_version=0
+        )
 
     def test_token_is_decodable(self):
         user = self._make_user()

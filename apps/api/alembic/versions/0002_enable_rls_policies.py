@@ -18,6 +18,7 @@ Architecture note on roles:
 super_admin users bypass RLS because no session variable is set for them.
 """
 
+import os
 from collections.abc import Sequence
 
 from alembic import op
@@ -32,7 +33,7 @@ RLS_TABLES = ["parcels", "trips", "tickets", "stations", "vehicles", "users"]
 
 # Application role — non-superuser so RLS is enforced
 APP_ROLE = "routpass_app"
-APP_ROLE_PASSWORD = "secret_app"  # override in production via env / secrets manager
+APP_ROLE_PASSWORD = os.environ.get("APP_ROLE_PASSWORD", "secret_app")
 
 
 def upgrade() -> None:

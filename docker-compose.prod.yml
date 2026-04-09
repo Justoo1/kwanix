@@ -43,6 +43,7 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       MANIFEST_EMAIL: ${MANIFEST_EMAIL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      APP_ROLE_PASSWORD: ${APP_ROLE_PASSWORD}
     restart: always
     deploy:
       resources:

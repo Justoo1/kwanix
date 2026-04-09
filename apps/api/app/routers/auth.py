@@ -93,6 +93,14 @@ async def refresh_token(
     if user is None:
         raise credentials_exc
 
+    token_version = payload.get("token_version", 0)
+    if token_version != user.token_version:
+        raise credentials_exc
+
+    user.token_version = (user.token_version or 0) + 1
+    await db.commit()
+    await db.refresh(user)
+
     return TokenResponse(
         access_token=create_access_token(user),
         refresh_token=create_refresh_token(user),
@@ -144,4 +152,5 @@ async def change_password(
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
     user.hashed_password = hash_password(body.new_password)
+    user.token_version = (user.token_version or 0) + 1
     await db.commit()
