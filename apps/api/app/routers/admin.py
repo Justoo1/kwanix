@@ -91,6 +91,7 @@ class UserCreate(BaseModel):
     password: str | None = None  # auto-generated if omitted
     role: UserRole
     station_id: int | None = None
+    company_id: int | None = None  # required when called by super_admin
 
 
 class UserResponse(BaseModel):
@@ -332,22 +333,23 @@ async def create_user(
         )
     ),
 ):
-    # Determine which company this user belongs to
-    if current_user.role == UserRole.super_admin:
-        # super_admin must explicitly set company via station_id lookup or
-        # we rely on company_id being set externally — for now require a
-        # company_admin to own the user
-        raise HTTPException(
-            status_code=400,
-            detail="super_admin cannot create users directly. Log in as a company_admin.",
-        )
-
-    # Prevent company_admin from creating super_admin accounts
+    # Prevent anyone from creating super_admin accounts via this endpoint
     if body.role == UserRole.super_admin:
         raise HTTPException(
             status_code=403,
             detail="Cannot create a super_admin account.",
         )
+
+    # Determine which company this user belongs to
+    if current_user.role == UserRole.super_admin:
+        if body.company_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="company_id is required when creating a user as super_admin.",
+            )
+        target_company_id = body.company_id
+    else:
+        target_company_id = current_user.company_id
 
     # Check for duplicate phone
     dup = await db.execute(select(User).where(User.phone == body.phone))
@@ -363,7 +365,7 @@ async def create_user(
         temp_password = plain_password
 
     user = User(
-        company_id=current_user.company_id,
+        company_id=target_company_id,
         station_id=body.station_id,
         full_name=body.full_name,
         phone=body.phone,
