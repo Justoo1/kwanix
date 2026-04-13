@@ -18,14 +18,18 @@ import string
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "api"))
+try:
+    from app.config import settings  # already on path (inside container)
+    from app.models import User, UserRole
+except ImportError:
+    # Running directly on host — add apps/api to path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "api"))
+    from app.config import settings
+    from app.models import User, UserRole
 
 from passlib.context import CryptContext
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from app.config import settings
-from app.models import User, UserRole
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 engine = create_async_engine(settings.database_url, echo=False)
