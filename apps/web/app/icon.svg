@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </linearGradient>
+    <linearGradient id="dot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background: rounded square -->
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+
+  <!-- K — vertical stroke -->
+  <rect x="7.5" y="7" width="3.5" height="18" rx="1.75" fill="white"/>
+
+  <!-- K — upper arm -->
+  <line x1="11" y1="15.5" x2="22.5" y2="7" stroke="white" stroke-width="3.2" stroke-linecap="round"/>
+
+  <!-- K — lower arm -->
+  <line x1="11" y1="15.5" x2="22.5" y2="25" stroke="white" stroke-width="3.2" stroke-linecap="round"/>
+
+  <!-- Waypoint dot at K vertex -->
+  <circle cx="11" cy="15.5" r="3" fill="url(#dot)"/>
+</svg>

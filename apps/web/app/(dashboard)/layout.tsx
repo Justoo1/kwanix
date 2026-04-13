@@ -17,8 +17,10 @@ function SubscriptionBanner({ status }: { status: SubscriptionStatus }) {
 
   const isGrace = s === "grace";
   const end = status.current_period_end ?? status.trial_ends_at;
+  // eslint-disable-next-line react-hooks/purity -- Server Component, runs once per request
+  const now = Date.now();
   const daysLeft = end
-    ? Math.max(0, Math.ceil((new Date(end).getTime() + 4 * 86400_000 - Date.now()) / 86400_000))
+    ? Math.max(0, Math.ceil((new Date(end).getTime() + 4 * 86400_000 - now) / 86400_000))
     : null;
 
   return (

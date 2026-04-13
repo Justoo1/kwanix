@@ -39,16 +39,25 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --pull
 echo "==> [$ENV] Starting services (rolling restart)"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
 
-echo "==> [$ENV] Waiting for API to be ready"
+API_PORT=$([ "$ENV" = "production" ] && echo "8100" || echo "8101")
+
+echo "==> [$ENV] Waiting for API to be ready (port $API_PORT)"
+HEALTHY=0
 for i in $(seq 1 12); do
-  if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" \
-       exec -T api curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+  if curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null 2>&1; then
     echo "==> [$ENV] API is healthy"
+    HEALTHY=1
     break
   fi
   echo "    attempt $i/12 — waiting 5s..."
   sleep 5
 done
+
+if [ "$HEALTHY" -eq 0 ]; then
+  echo "ERROR: API did not become healthy after 60s. Check logs:"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs api --tail=30
+  exit 1
+fi
 
 echo ""
 echo "✓ $ENV deployed successfully."
