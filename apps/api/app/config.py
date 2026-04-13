@@ -9,6 +9,7 @@ _INSECURE_DEFAULTS = {"change-me-in-production", "", "secret"}
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://kwanix:secret@localhost:5432/kwanix_db"
+    database_admin_url: str | None = None  # superuser URL for migrations/admin scripts
 
     # Security
     jwt_secret_key: str

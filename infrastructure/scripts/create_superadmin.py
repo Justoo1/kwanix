@@ -32,7 +32,11 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-engine = create_async_engine(settings.database_url, echo=False)
+
+# Prefer the admin URL (superuser) so this script works even when
+# kwanix_app's password hasn't been synced yet.
+_db_url = getattr(settings, "database_admin_url", None) or settings.database_url
+engine = create_async_engine(_db_url, echo=False)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
