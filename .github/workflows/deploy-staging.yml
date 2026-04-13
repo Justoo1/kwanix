@@ -1,13 +1,25 @@
 name: Deploy — Staging
 
 on:
+  # API changes: wait for CI to finish, only deploy on success
+  workflow_run:
+    workflows: ["API CI"]
+    types: [completed]
+    branches: [develop]
+  # Non-API changes (frontend, infra, etc.): deploy directly
   push:
     branches: [develop]
+    paths-ignore:
+      - "apps/api/**"
 
 jobs:
   deploy:
     name: Deploy to staging
     runs-on: ubuntu-latest
+    # For workflow_run events, only proceed if CI passed
+    if: >
+      github.event_name == 'push' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.2.0
