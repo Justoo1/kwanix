@@ -295,6 +295,7 @@ function PaymentSuccessContent() {
 
               {/* QR code */}
               <div className="px-3 pb-3 flex flex-col items-center gap-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`${API_BASE}/api/v1/public/tickets/${ticket.id}/qr`}
                   alt="Boarding QR"

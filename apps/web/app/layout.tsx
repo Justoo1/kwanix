@@ -5,6 +5,7 @@ import "./globals.css";
 
 import { QueryProvider } from "@/components/providers/query-provider";
 import { NetworkProvider } from "@/components/providers/network-provider";
+import { PwaRegister } from "@/components/pwa-register";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -37,6 +38,7 @@ export default function RootLayout({
         <NetworkProvider>
           <QueryProvider>{children}</QueryProvider>
           <Toaster position="top-right" richColors closeButton />
+          <PwaRegister />
         </NetworkProvider>
       </body>
     </html>
