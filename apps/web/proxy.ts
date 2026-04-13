@@ -12,6 +12,7 @@ const ADMIN_PREFIXES = [
   "/stations",
   "/vehicles",
   "/users",
+  "/drivers",
   "/companies",
   "/audit",
   "/webhooks",

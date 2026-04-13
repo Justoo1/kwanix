@@ -42,6 +42,7 @@ const companyAdminItems = [
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/drivers", label: "Drivers", icon: Bus },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -54,6 +55,7 @@ const managerItems = [
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
+  { href: "/drivers", label: "Drivers", icon: Bus },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { PlusCircle, Wrench, TrendingUp } from "lucide-react";
+import { PencilLine, PlusCircle, Wrench, TrendingUp } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { clientFetch } from "@/lib/client-api";
@@ -41,6 +41,13 @@ interface VehicleResponse {
   capacity: number;
   is_active: boolean;
   is_available: boolean;
+  default_driver_id: number | null;
+  default_driver_name: string | null;
+}
+
+interface DriverOption {
+  id: number;
+  full_name: string;
 }
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
@@ -68,11 +75,30 @@ const createVehicleSchema = z.object({
 
 type CreateVehicleValues = z.infer<typeof createVehicleSchema>;
 
+const editVehicleSchema = z.object({
+  plate_number: z.string().min(1, "Plate number is required"),
+  model: z.string().optional(),
+  capacity: z
+    .string()
+    .min(1, "Capacity is required")
+    .refine(
+      (v) => {
+        const n = Number(v);
+        return !isNaN(n) && Number.isInteger(n) && n > 0;
+      },
+      { message: "Capacity must be a positive whole number" }
+    ),
+  driver_id: z.string().optional(),
+});
+
+type EditVehicleValues = z.infer<typeof editVehicleSchema>;
+
 // ── Column definitions ────────────────────────────────────────────────────────
 
 function buildColumns(
   canManage: boolean,
-  onMaintenance: (v: VehicleResponse) => void
+  onMaintenance: (v: VehicleResponse) => void,
+  onEdit: (v: VehicleResponse) => void
 ): ColumnDef<VehicleResponse>[] {
   const cols: ColumnDef<VehicleResponse>[] = [
     {
@@ -140,15 +166,26 @@ function buildColumns(
       id: "actions",
       header: "",
       cell: ({ row }) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-xs"
-          onClick={() => onMaintenance(row.original)}
-        >
-          <Wrench className="mr-1 h-3 w-3" />
-          Maintenance
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onEdit(row.original)}
+          >
+            <PencilLine className="mr-1 h-3 w-3" />
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onMaintenance(row.original)}
+          >
+            <Wrench className="mr-1 h-3 w-3" />
+            Maintenance
+          </Button>
+        </div>
       ),
     });
   }
@@ -381,6 +418,174 @@ function CreateVehicleDialog({
   );
 }
 
+// ── Edit vehicle dialog ───────────────────────────────────────────────────────
+
+function EditVehicleDialog({
+  vehicle,
+  open,
+  onOpenChange,
+}: {
+  vehicle: VehicleResponse | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const { data: drivers = [] } = useQuery({
+    queryKey: ["drivers"],
+    queryFn: () => clientFetch<DriverOption[]>("admin/users?role=driver"),
+    enabled: open,
+  });
+
+  const form = useForm<EditVehicleValues, unknown, EditVehicleValues>({
+    resolver: zodResolver(editVehicleSchema),
+    values: vehicle
+      ? {
+          plate_number: vehicle.plate_number,
+          model: vehicle.model ?? "",
+          capacity: String(vehicle.capacity),
+          driver_id: vehicle.default_driver_id ? String(vehicle.default_driver_id) : "",
+        }
+      : { plate_number: "", model: "", capacity: "", driver_id: "" },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (values: EditVehicleValues) => {
+      await clientFetch(`vehicles/${vehicle!.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          plate_number: values.plate_number,
+          model: values.model || null,
+          capacity: parseInt(values.capacity, 10),
+        }),
+      });
+      await clientFetch(`vehicles/${vehicle!.id}/driver`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          driver_id: values.driver_id ? parseInt(values.driver_id, 10) : null,
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      toast.success("Vehicle updated.");
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to update vehicle.");
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit vehicle — {vehicle?.plate_number}</DialogTitle>
+          <DialogDescription>
+            Update plate number, model, capacity, or assigned driver.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+            className="space-y-4"
+          >
+            <FormField
+              control={form.control}
+              name="plate_number"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Plate number</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="GR-1234-24"
+                      className="uppercase font-mono"
+                      {...field}
+                      onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="model"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Model <span className="text-muted-foreground font-normal">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Yutong ZK6122H9" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="capacity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Seating capacity</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="50" min={1} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="driver_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Default driver <span className="text-muted-foreground font-normal">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <select
+                      {...field}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">— Unassigned —</option>
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={mutation.isPending}>
+                {mutation.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Vehicle utilisation section (company_admin only) ─────────────────────────
 
 interface VehicleUtilisationItem {
@@ -460,13 +665,18 @@ export function VehiclesView({ canCreate, canManage }: VehiclesViewProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [maintenanceVehicle, setMaintenanceVehicle] =
     useState<VehicleResponse | null>(null);
+  const [editVehicle, setEditVehicle] = useState<VehicleResponse | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["vehicles"],
     queryFn: () => clientFetch<VehicleResponse[]>("vehicles"),
   });
 
-  const columns = buildColumns(canManage, (v) => setMaintenanceVehicle(v));
+  const columns = buildColumns(
+    canManage,
+    (v) => setMaintenanceVehicle(v),
+    (v) => setEditVehicle(v)
+  );
 
   return (
     <div className="space-y-6">
@@ -502,6 +712,15 @@ export function VehiclesView({ canCreate, canManage }: VehiclesViewProps) {
           open={maintenanceVehicle !== null}
           onOpenChange={(open) => {
             if (!open) setMaintenanceVehicle(null);
+          }}
+        />
+      )}
+      {canManage && (
+        <EditVehicleDialog
+          vehicle={editVehicle}
+          open={editVehicle !== null}
+          onOpenChange={(open) => {
+            if (!open) setEditVehicle(null);
           }}
         />
       )}

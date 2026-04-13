@@ -393,26 +393,27 @@ async def create_user(
 async def list_users(
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    role: UserRole | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(
             UserRole.super_admin,
             UserRole.company_admin,
+            UserRole.station_manager,
         )
     ),
 ):
     if current_user.role == UserRole.super_admin:
-        result = await db.execute(
-            select(User).order_by(User.company_id, User.full_name).limit(limit).offset(offset)
-        )
+        q = select(User).order_by(User.company_id, User.full_name)
     else:
-        result = await db.execute(
+        q = (
             select(User)
             .where(User.company_id == current_user.company_id)
             .order_by(User.full_name)
-            .limit(limit)
-            .offset(offset)
         )
+    if role is not None:
+        q = q.where(User.role == role)
+    result = await db.execute(q.limit(limit).offset(offset))
     return result.scalars().all()
 
 

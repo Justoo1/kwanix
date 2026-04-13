@@ -1,7 +1,11 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 from app.models.base import Base, TimestampMixin
 
@@ -21,11 +25,15 @@ class Vehicle(Base, TimestampMixin):
     capacity: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    default_driver_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="vehicles")  # noqa: F821
     home_station: Mapped["Station | None"] = relationship(back_populates="vehicles")  # noqa: F821
     trips: Mapped[list["Trip"]] = relationship(back_populates="vehicle")  # noqa: F821
+    default_driver: Mapped["User | None"] = relationship(foreign_keys=[default_driver_id])  # noqa: F821
     maintenance_logs: Mapped[list["VehicleMaintenanceLog"]] = relationship(  # noqa: F821
         back_populates="vehicle", order_by="VehicleMaintenanceLog.occurred_at.desc()"
     )

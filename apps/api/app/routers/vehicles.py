@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload as _selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
 from app.models.subscription import SubscriptionPlan
@@ -30,6 +30,8 @@ class VehicleResponse(BaseModel):
     capacity: int
     is_active: bool
     is_available: bool
+    default_driver_id: int | None = None
+    default_driver_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -51,6 +53,32 @@ class MaintenanceLogResponse(BaseModel):
 
 class AvailabilityRequest(BaseModel):
     is_available: bool
+
+
+class UpdateVehicleRequest(BaseModel):
+    plate_number: str | None = None
+    model: str | None = None
+    capacity: int | None = None
+
+
+class AssignDriverRequest(BaseModel):
+    driver_id: int | None = None
+
+
+def _vehicle_response(v: Vehicle) -> VehicleResponse:
+    return VehicleResponse(
+        id=v.id,
+        plate_number=v.plate_number,
+        model=v.model,
+        capacity=v.capacity,
+        is_active=v.is_active,
+        is_available=v.is_available,
+        default_driver_id=v.default_driver_id,
+        default_driver_name=v.default_driver.full_name if v.default_driver else None,
+    )
+
+
+_VEHICLE_OPTS = [_selectinload(Vehicle.default_driver)]
 
 
 @router.post(
@@ -97,8 +125,8 @@ async def create_vehicle(
     )
     db.add(vehicle)
     await db.commit()
-    await db.refresh(vehicle)
-    return vehicle
+    await db.refresh(vehicle, ["default_driver"])
+    return _vehicle_response(vehicle)
 
 
 @router.get("", response_model=list[VehicleResponse])
@@ -109,9 +137,44 @@ async def list_vehicles(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Vehicle).where(Vehicle.is_active == True).limit(limit).offset(offset)  # noqa: E712
+        select(Vehicle)
+        .where(Vehicle.is_active == True)  # noqa: E712
+        .options(*_VEHICLE_OPTS)
+        .limit(limit)
+        .offset(offset)
     )
-    return result.scalars().all()
+    return [_vehicle_response(v) for v in result.scalars().all()]
+
+
+@router.patch(
+    "/{vehicle_id}",
+    response_model=VehicleResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def update_vehicle(
+    vehicle_id: int,
+    body: UpdateVehicleRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Update vehicle plate number, model, or capacity."""
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id).options(*_VEHICLE_OPTS)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    if body.plate_number is not None:
+        vehicle.plate_number = body.plate_number
+    if body.model is not None:
+        vehicle.model = body.model
+    if body.capacity is not None:
+        vehicle.capacity = body.capacity
+
+    await db.commit()
+    await db.refresh(vehicle, ["default_driver"])
+    return _vehicle_response(vehicle)
 
 
 @router.post(
@@ -166,15 +229,58 @@ async def update_availability(
     current_user: User = Depends(get_current_user),
 ):
     """Mark a vehicle as available or unavailable."""
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id).options(*_VEHICLE_OPTS)
+    )
     vehicle = result.scalar_one_or_none()
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
     vehicle.is_available = body.is_available
     await db.commit()
-    await db.refresh(vehicle)
-    return vehicle
+    await db.refresh(vehicle, ["default_driver"])
+    return _vehicle_response(vehicle)
+
+
+@router.patch(
+    "/{vehicle_id}/driver",
+    response_model=VehicleResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def assign_vehicle_driver(
+    vehicle_id: int,
+    body: AssignDriverRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Assign or unassign a default driver for this vehicle."""
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id).options(*_VEHICLE_OPTS)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    if body.driver_id is not None:
+        driver_result = await db.execute(
+            select(User).where(
+                User.id == body.driver_id,
+                User.role == UserRole.driver,
+                User.is_active == True,  # noqa: E712
+                User.company_id == current_user.company_id,
+            )
+        )
+        driver = driver_result.scalar_one_or_none()
+        if driver is None:
+            raise HTTPException(status_code=400, detail="Driver not found or not eligible")
+        vehicle.default_driver_id = driver.id
+        vehicle.default_driver = driver
+    else:
+        vehicle.default_driver_id = None
+        vehicle.default_driver = None
+
+    await db.commit()
+    return _vehicle_response(vehicle)
 
 
 @router.get(
@@ -191,7 +297,7 @@ async def list_maintenance_logs(
     result = await db.execute(
         select(VehicleMaintenanceLog)
         .where(VehicleMaintenanceLog.vehicle_id == vehicle_id)
-        .options(selectinload(VehicleMaintenanceLog.created_by))
+        .options(_selectinload(VehicleMaintenanceLog.created_by))
         .order_by(VehicleMaintenanceLog.occurred_at.desc())
     )
     logs = result.scalars().all()
