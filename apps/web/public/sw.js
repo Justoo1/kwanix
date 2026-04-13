@@ -2,7 +2,10 @@
 // Caches the app shell on install; serves from cache when offline.
 
 const CACHE = "kwanix-v1";
-const SHELL = ["/", "/dashboard", "/login"];
+// Only cache public, unauthenticated pages.
+// /dashboard and /login redirect depending on auth state — caching them
+// causes "site can't be reached" errors when the SW serves a stale redirect.
+const SHELL = ["/"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Kwanix",
     short_name: "Kwanix",
     description: "Unified Transit Management — Ticketing & Parcel Logistics",
-    start_url: "/dashboard",
+    start_url: "/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#022c22",
