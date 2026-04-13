@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
-import type { UserResponse } from "@/lib/definitions";
+import type { CompanyResponse, UserResponse } from "@/lib/definitions";
 
 import UsersClient from "./users-client";
 
@@ -19,12 +19,15 @@ export default async function UsersPage() {
     redirect("/dashboard");
   }
 
-  const [users, stations] = await Promise.all([
+  const [users, stations, companies] = await Promise.all([
     apiFetch<UserResponse[]>("/api/v1/admin/users"),
     role === "company_admin"
       ? apiFetch<StationOption[]>("/api/v1/stations").catch(() => [] as StationOption[])
       : Promise.resolve([] as StationOption[]),
+    role === "super_admin"
+      ? apiFetch<CompanyResponse[]>("/api/v1/admin/companies").catch(() => [] as CompanyResponse[])
+      : Promise.resolve([] as CompanyResponse[]),
   ]);
 
-  return <UsersClient users={users} viewerRole={role} stations={stations} />;
+  return <UsersClient users={users} viewerRole={role} stations={stations} companies={companies} />;
 }

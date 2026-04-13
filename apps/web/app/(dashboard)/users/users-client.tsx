@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { clientFetch } from "@/lib/client-api";
-import type { UserResponse, UserRole } from "@/lib/definitions";
+import type { CompanyResponse, UserResponse, UserRole } from "@/lib/definitions";
 
 interface StationOption {
   id: number;
@@ -32,6 +32,7 @@ interface InviteForm {
   email: string;
   role: string;
   station_id: string;
+  company_id: string;
 }
 
 const BLANK_FORM: InviteForm = {
@@ -40,16 +41,19 @@ const BLANK_FORM: InviteForm = {
   email: "",
   role: "station_clerk",
   station_id: "",
+  company_id: "",
 };
 
 export default function UsersClient({
   users: initialUsers,
   viewerRole,
   stations = [],
+  companies = [],
 }: {
   users: UserResponse[];
   viewerRole: UserRole;
   stations?: StationOption[];
+  companies?: CompanyResponse[];
 }) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
@@ -71,7 +75,7 @@ export default function UsersClient({
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  const canInvite = viewerRole === "company_admin";
+  const canInvite = viewerRole === "company_admin" || viewerRole === "super_admin";
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -86,6 +90,7 @@ export default function UsersClient({
           email: form.email || undefined,
           role: form.role,
           station_id: form.station_id ? parseInt(form.station_id, 10) : undefined,
+          company_id: form.company_id ? parseInt(form.company_id, 10) : undefined,
         }),
       });
       setCreatedResult(result);
@@ -370,19 +375,37 @@ export default function UsersClient({
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-1">
-                      Station ID <span className="text-zinc-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Leave blank for company-wide"
-                      value={form.station_id}
-                      onChange={(e) => setForm({ ...form, station_id: e.target.value })}
-                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
-                    />
-                  </div>
+                  {viewerRole === "super_admin" && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">Company</label>
+                      <select
+                        required
+                        value={form.company_id}
+                        onChange={(e) => setForm({ ...form, company_id: e.target.value })}
+                        className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                      >
+                        <option value="">— Select a company —</option>
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {viewerRole === "company_admin" && (
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">
+                        Station <span className="text-zinc-400 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Leave blank for company-wide"
+                        value={form.station_id}
+                        onChange={(e) => setForm({ ...form, station_id: e.target.value })}
+                        className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                      />
+                    </div>
+                  )}
                 </div>
                 <p className="text-xs text-zinc-500">
                   A temporary password will be auto-generated. You will see it once after creation.
