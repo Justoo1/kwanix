@@ -240,13 +240,13 @@ create-superadmin:
 
 staging-create-superadmin:
 	@if [ -z "$(EMAIL)" ]; then echo "Usage: make staging-create-superadmin EMAIL=... NAME=... PHONE=..."; exit 1; fi
-	$(STAGING) exec api python /infrastructure/scripts/create_superadmin.py \
-		--email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)"
+	$(STAGING) exec -T api python - --email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)" \
+		< infrastructure/scripts/create_superadmin.py
 
 prod-create-superadmin:
 	@if [ -z "$(EMAIL)" ]; then echo "Usage: make prod-create-superadmin EMAIL=... NAME=... PHONE=..."; exit 1; fi
-	$(PROD) exec api python /infrastructure/scripts/create_superadmin.py \
-		--email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)"
+	$(PROD) exec -T api python - --email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)" \
+		< infrastructure/scripts/create_superadmin.py
 
 # ── Staging ───────────────────────────────────────────────────────────────────
 
