@@ -30,28 +30,28 @@ jobs:
       - name: Create dev env for CI
         working-directory: .
         run: |
-          cat > .env.dev << 'EOF'
-          POSTGRES_USER=kwanix
-          POSTGRES_PASSWORD=secret
-          POSTGRES_DB=kwanix_db
-          DATABASE_URL=postgresql+asyncpg://kwanix_app:secret_app@postgres:5432/kwanix_db
-          DATABASE_ADMIN_URL=postgresql+asyncpg://kwanix:secret@postgres:5432/kwanix_db
-          APP_ROLE_PASSWORD=secret_app
-          JWT_SECRET_KEY=ci-test-secret-key-not-used-in-production
-          REDIS_PASSWORD=redis_secret
-          SESSION_SECRET=ci-session-secret-not-used-in-production
-          API_INTERNAL_URL=http://api:8000
-          NEXT_PUBLIC_API_URL=http://localhost:8000
-          NEXT_PUBLIC_APP_URL=http://localhost:3000
-          PUBLIC_APP_URL=http://localhost:3000
-          API_PUBLIC_URL=http://localhost:8000
-          ALLOWED_ORIGINS=http://localhost:3000
-          ENVIRONMENT=development
-          DEBUG=true
-          ARKESEL_API_KEY=
-          PAYSTACK_SECRET_KEY=
-          PAYSTACK_PUBLIC_KEY=
-          EOF
+          cat > .env.dev <<'EOF'
+POSTGRES_USER=kwanix
+POSTGRES_PASSWORD=secret
+POSTGRES_DB=kwanix_db
+DATABASE_URL=postgresql+asyncpg://kwanix_app:secret_app@postgres:5432/kwanix_db
+DATABASE_ADMIN_URL=postgresql+asyncpg://kwanix:secret@postgres:5432/kwanix_db
+APP_ROLE_PASSWORD=secret_app
+JWT_SECRET_KEY=ci-test-secret-key-not-used-in-production
+REDIS_PASSWORD=redis_secret
+SESSION_SECRET=ci-session-secret-not-used-in-production
+API_INTERNAL_URL=http://api:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+PUBLIC_APP_URL=http://localhost:3000
+API_PUBLIC_URL=http://localhost:8000
+ALLOWED_ORIGINS=http://localhost:3000
+ENVIRONMENT=development
+DEBUG=true
+ARKESEL_API_KEY=
+PAYSTACK_SECRET_KEY=
+PAYSTACK_PUBLIC_KEY=
+EOF
 
       - name: Start API (for type generation)
         working-directory: .
