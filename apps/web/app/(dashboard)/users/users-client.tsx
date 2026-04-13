@@ -16,12 +16,14 @@ const ROLE_LABELS: Record<string, string> = {
   company_admin: "Company Admin",
   station_manager: "Station Manager",
   station_clerk: "Station Clerk",
+  driver: "Driver",
 };
 
 const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "company_admin", label: "Company Admin" },
   { value: "station_manager", label: "Station Manager" },
   { value: "station_clerk", label: "Station Clerk" },
+  { value: "driver", label: "Driver" },
 ];
 
 type UserCreateResponse = UserResponse & { temp_password?: string | null };

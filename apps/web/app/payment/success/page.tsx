@@ -364,20 +364,25 @@ function TicketDownloadButtons({
 
   const slug = passengerName.replace(/\s+/g, "-");
 
-  async function captureDataUrl(): Promise<string> {
+  async function captureDataUrl(targetPxWidth: number): Promise<string> {
     const { toPng } = await import("html-to-image");
     const el = document.getElementById("passenger-ticket");
     if (!el) throw new Error("Ticket element not found");
-    // Cap at 800 px wide — standard ticket print width, ~1:2.5 aspect ratio
-    const targetW = 500;
-    const scale = targetW / el.offsetWidth;
-    return toPng(el, { pixelRatio: scale, cacheBust: true });
+    const scale = targetPxWidth / el.offsetWidth;
+    return toPng(el, {
+      pixelRatio: scale,
+      cacheBust: true,
+      // Force white background so transparent accent overlays don't bleed
+      // the dark page background into the captured image.
+      backgroundColor: "#ffffff",
+    });
   }
 
   async function downloadImage() {
     setBusy("image");
     try {
-      const dataUrl = await captureDataUrl();
+      // ~800 px wide: same visual size as on-screen, white background fixes text contrast
+      const dataUrl = await captureDataUrl(800);
       const link = document.createElement("a");
       link.download = `ticket-${slug}-${ticketId}.png`;
       link.href = dataUrl;
@@ -390,14 +395,14 @@ function TicketDownloadButtons({
   async function downloadPdf() {
     setBusy("pdf");
     try {
-      const dataUrl = await captureDataUrl();
+      // Higher resolution for print quality
+      const dataUrl = await captureDataUrl(1600);
       const { jsPDF } = await import("jspdf");
-      // Measure the element to set the PDF page to the same aspect ratio
+      // Ticket-sized page: 200mm wide, height proportional to the element
       const el = document.getElementById("passenger-ticket")!;
       const { width: elW, height: elH } = el.getBoundingClientRect();
-      const ratio = elH / elW;
-      const pageW = 297; // mm — A4 landscape width
-      const pageH = pageW * ratio;
+      const pageW = 200; // mm — compact ticket width
+      const pageH = pageW * (elH / elW);
       const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [pageW, pageH] });
       pdf.addImage(dataUrl, "PNG", 0, 0, pageW, pageH);
       pdf.save(`ticket-${slug}-${ticketId}.pdf`);

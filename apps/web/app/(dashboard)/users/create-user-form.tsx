@@ -9,6 +9,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "company_admin", label: "Company Admin" },
   { value: "station_manager", label: "Station Manager" },
   { value: "station_clerk", label: "Station Clerk" },
+  { value: "driver", label: "Driver" },
 ];
 
 export default function CreateUserForm() {

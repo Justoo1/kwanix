@@ -132,6 +132,69 @@ async def clerk_token(clerk_user: User) -> str:
     return create_access_token(clerk_user)
 
 
+@pytest.fixture
+async def company_admin_user(db: AsyncSession, company: Company) -> User:
+    u = User(
+        company_id=company.id,
+        station_id=None,
+        full_name="Test Company Admin",
+        phone="233541234570",
+        email="companyadmin@test.io",
+        hashed_password=hash_password("testpass123"),
+        role=UserRole.company_admin,
+    )
+    db.add(u)
+    await db.flush()
+    return u
+
+
+@pytest.fixture
+async def company_admin_token(company_admin_user: User) -> str:
+    return create_access_token(company_admin_user)
+
+
+@pytest.fixture
+async def manager_user(db: AsyncSession, company: Company) -> User:
+    u = User(
+        company_id=company.id,
+        station_id=None,
+        full_name="Test Manager",
+        phone="233541234568",
+        email="manager@test.io",
+        hashed_password=hash_password("testpass123"),
+        role=UserRole.station_manager,
+    )
+    db.add(u)
+    await db.flush()
+    return u
+
+
+@pytest.fixture
+async def manager_token(manager_user: User) -> str:
+    return create_access_token(manager_user)
+
+
+@pytest.fixture
+async def driver_user(db: AsyncSession, company: Company) -> User:
+    u = User(
+        company_id=company.id,
+        station_id=None,
+        full_name="Test Driver",
+        phone="233541234999",
+        email="driver@test.io",
+        hashed_password=hash_password("driverpass123"),
+        role=UserRole.driver,
+    )
+    db.add(u)
+    await db.flush()
+    return u
+
+
+@pytest.fixture
+async def driver_token(driver_user: User) -> str:
+    return create_access_token(driver_user)
+
+
 # ── FastAPI test client ───────────────────────────────────────────────────────
 
 

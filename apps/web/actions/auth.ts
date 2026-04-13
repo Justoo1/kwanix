@@ -73,7 +73,8 @@ export async function login(
 
   await createSession({ accessToken: access_token, refreshToken: refresh_token, accessTokenExpiresAt, user });
 
-  redirect("/dashboard");
+  const destination = user.role === "driver" ? "/driver" : "/dashboard";
+  redirect(destination);
 }
 
 export async function logout(): Promise<void> {

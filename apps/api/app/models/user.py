@@ -11,6 +11,7 @@ class UserRole(enum.StrEnum):
     company_admin = "company_admin"
     station_manager = "station_manager"
     station_clerk = "station_clerk"
+    driver = "driver"
 
 
 class User(Base, TimestampMixin):

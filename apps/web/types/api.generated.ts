@@ -1066,7 +1066,7 @@ export interface components {
          * UserRole
          * @enum {string}
          */
-        UserRole: "super_admin" | "company_admin" | "station_manager" | "station_clerk";
+        UserRole: "super_admin" | "company_admin" | "station_manager" | "station_clerk" | "driver";
         /** ValidationError */
         ValidationError: {
             /** Location */

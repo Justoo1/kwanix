@@ -82,7 +82,21 @@ async def list_tickets(
     return result.scalars().all()
 
 
-@router.post("", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=TicketResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(
+            require_role(
+                UserRole.station_clerk,
+                UserRole.station_manager,
+                UserRole.company_admin,
+                UserRole.super_admin,
+            )
+        )
+    ],
+)
 async def create_ticket(
     body: CreateTicketRequest,
     db: AsyncSession = Depends(get_db_for_user),

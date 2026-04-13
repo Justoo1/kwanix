@@ -37,6 +37,9 @@ export async function apiFetch<T>(
   });
 
   if (res.ok) {
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return undefined as T;
+    }
     return res.json() as Promise<T>;
   }
 
@@ -66,6 +69,9 @@ export async function apiFetch<T>(
       if (!retryRes.ok) {
         const text = await retryRes.text().catch(() => "");
         throw new ApiError(retryRes.status, text);
+      }
+      if (retryRes.status === 204 || retryRes.headers.get("content-length") === "0") {
+        return undefined as T;
       }
       return retryRes.json() as Promise<T>;
     }

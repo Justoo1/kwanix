@@ -21,6 +21,7 @@ import BookingToggle from "./booking-toggle"
 import ManifestDownloadButton from "./manifest-download-button"
 import ManifestCsvButton from "./manifest-csv-button"
 import BulkCancelButton from "./bulk-cancel-button"
+import AssignDriverButton from "./assign-driver-button"
 
 interface TripRevenue {
   total_revenue_ghs: number
@@ -50,6 +51,8 @@ interface TripDetail {
   parcel_count: number
   booking_open: boolean
   price_ticket_base: number | null
+  driver_id: number | null
+  driver_name: string | null
 }
 
 // ── Status config ──────────────────────────────────────────────────────────────
@@ -246,6 +249,15 @@ export default async function TripDetailPage({
           </div>
         )}
       </div>
+
+      {/* ── Driver assignment — managers only ──────────────────────────── */}
+      {canManage && (
+        <AssignDriverButton
+          tripId={trip.id}
+          currentDriverId={trip.driver_id}
+          currentDriverName={trip.driver_name}
+        />
+      )}
 
       {/* ── Online booking toggle — managers only ───────────────────────── */}
       {canManage && (

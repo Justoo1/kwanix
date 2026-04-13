@@ -58,6 +58,9 @@ class Trip(Base, TimestampMixin):
     price_parcel_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     price_ticket_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     booking_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    driver_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="trips")  # noqa: F821
@@ -75,3 +78,4 @@ class Trip(Base, TimestampMixin):
     stops: Mapped[list["TripStop"]] = relationship(  # noqa: F821
         back_populates="trip", order_by="TripStop.sequence_order"
     )
+    driver: Mapped["User | None"] = relationship(foreign_keys=[driver_id])  # noqa: F821
