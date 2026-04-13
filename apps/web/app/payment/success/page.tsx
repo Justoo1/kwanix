@@ -364,17 +364,25 @@ function TicketDownloadButtons({
 
   const slug = passengerName.replace(/\s+/g, "-");
 
-  async function captureDataUrl(pixelRatio = 3): Promise<string> {
+  async function captureDataUrl(targetPxWidth: number): Promise<string> {
     const { toPng } = await import("html-to-image");
     const el = document.getElementById("passenger-ticket");
     if (!el) throw new Error("Ticket element not found");
-    return toPng(el, { pixelRatio, cacheBust: true });
+    const scale = targetPxWidth / el.offsetWidth;
+    return toPng(el, {
+      pixelRatio: scale,
+      cacheBust: true,
+      // Force white background so transparent accent overlays don't bleed
+      // the dark page background into the captured image.
+      backgroundColor: "#ffffff",
+    });
   }
 
   async function downloadImage() {
     setBusy("image");
     try {
-      const dataUrl = await captureDataUrl(3);
+      // ~800 px wide: same visual size as on-screen, white background fixes text contrast
+      const dataUrl = await captureDataUrl(800);
       const link = document.createElement("a");
       link.download = `ticket-${slug}-${ticketId}.png`;
       link.href = dataUrl;
@@ -387,7 +395,8 @@ function TicketDownloadButtons({
   async function downloadPdf() {
     setBusy("pdf");
     try {
-      const dataUrl = await captureDataUrl(3);
+      // Higher resolution for print quality
+      const dataUrl = await captureDataUrl(1600);
       const { jsPDF } = await import("jspdf");
       // Ticket-sized page: 200mm wide, height proportional to the element
       const el = document.getElementById("passenger-ticket")!;
