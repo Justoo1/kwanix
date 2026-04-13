@@ -16,6 +16,7 @@
         prod-up prod-down prod-build prod-migrate prod-logs \
         prod-api-logs prod-web-logs prod-ps \
         prod-shell prod-db-shell prod-db-list prod-restart-api \
+        create-superadmin staging-create-superadmin prod-create-superadmin \
         nginx-reload nginx-staging nginx-prod \
         clean clean-staging clean-prod prune
 
@@ -230,6 +231,22 @@ revision:
 
 seed:
 	$(DEV) exec -e PYTHONPATH=/app api python /infrastructure/scripts/seed_db.py
+
+# Usage: make create-superadmin EMAIL=admin@kwanix.com NAME="Kwanix Admin" PHONE=233200000000
+create-superadmin:
+	@if [ -z "$(EMAIL)" ]; then echo "Usage: make create-superadmin EMAIL=... NAME=... PHONE=..."; exit 1; fi
+	$(DEV) exec api python /infrastructure/scripts/create_superadmin.py \
+		--email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)"
+
+staging-create-superadmin:
+	@if [ -z "$(EMAIL)" ]; then echo "Usage: make staging-create-superadmin EMAIL=... NAME=... PHONE=..."; exit 1; fi
+	$(STAGING) exec api python /infrastructure/scripts/create_superadmin.py \
+		--email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)"
+
+prod-create-superadmin:
+	@if [ -z "$(EMAIL)" ]; then echo "Usage: make prod-create-superadmin EMAIL=... NAME=... PHONE=..."; exit 1; fi
+	$(PROD) exec api python /infrastructure/scripts/create_superadmin.py \
+		--email "$(EMAIL)" --name "$(NAME)" --phone "$(PHONE)"
 
 # ── Staging ───────────────────────────────────────────────────────────────────
 
