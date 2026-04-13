@@ -31,6 +31,7 @@ const superAdminItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const companyAdminItems = [
@@ -53,6 +54,7 @@ const managerItems = [
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const clerkItems = [
@@ -60,6 +62,7 @@ const clerkItems = [
   { href: "/parcels", label: "Parcels", icon: Package },
   { href: "/trips", label: "Trips", icon: Bus },
   { href: "/tickets", label: "Tickets", icon: Ticket },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function getNavItems(role: UserRole) {
