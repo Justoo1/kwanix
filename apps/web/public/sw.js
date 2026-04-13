@@ -2,7 +2,7 @@
 // Caches the app shell on install; serves from cache when offline.
 
 const CACHE = "kwanix-v1";
-const SHELL = ["/dashboard", "/login"];
+const SHELL = ["/", "/dashboard", "/login"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
