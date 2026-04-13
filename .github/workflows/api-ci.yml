@@ -31,7 +31,8 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql+asyncpg://kwanix:secret@localhost:5432/kwanix_test
+      DATABASE_URL: postgresql+asyncpg://kwanix_app:ci-app-role-password@localhost:5432/kwanix_test
+      DATABASE_ADMIN_URL: postgresql+asyncpg://kwanix:secret@localhost:5432/kwanix_test
       JWT_SECRET_KEY: test-secret-key-for-ci-only-not-a-real-secret
       APP_ROLE_PASSWORD: ci-app-role-password
       ARKESEL_API_KEY: ""
@@ -56,6 +57,11 @@ jobs:
 
       - name: Type check (mypy)
         run: mypy app || true  # non-blocking — pre-existing errors, fix incrementally
+
+      - name: Run migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://kwanix:secret@localhost:5432/kwanix_test
 
       - name: Run tests
         run: pytest --cov=app --cov-report=term-missing
