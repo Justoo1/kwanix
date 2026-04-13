@@ -40,6 +40,8 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.2}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://staging.kwanix.com}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://staging-api.kwanix.com}
       MANIFEST_EMAIL: ${MANIFEST_EMAIL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
     ports:
