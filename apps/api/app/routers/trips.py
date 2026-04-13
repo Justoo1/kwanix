@@ -39,6 +39,7 @@ _TRIP_OPTS = [
     selectinload(Trip.destination_station),
     selectinload(Trip.parcels),
     selectinload(Trip.tickets),
+    selectinload(Trip.driver),
 ]
 
 
@@ -71,6 +72,8 @@ class TripResponse(BaseModel):
     tickets_sold: int = 0
     occupancy_pct: float = 0.0
     is_near_full: bool = False
+    driver_id: int | None = None
+    driver_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -91,6 +94,7 @@ class TripResponse(BaseModel):
             "price_ticket_base": getattr(data, "price_ticket_base", None),
             "occupancy_pct": 0.0,
             "is_near_full": False,
+            "driver_id": getattr(data, "driver_id", None),
         }
         try:
             result["vehicle_plate"] = data.vehicle.plate_number
@@ -121,6 +125,10 @@ class TripResponse(BaseModel):
                 result["is_near_full"] = occ >= 80.0
         except Exception as exc:
             logger.debug("tickets not loaded on trip", trip_id=data.id, error=str(exc))
+        try:
+            result["driver_name"] = data.driver.full_name if data.driver else None
+        except Exception as exc:
+            logger.debug("driver not loaded on trip", trip_id=data.id, error=str(exc))
         return result
 
 
@@ -569,6 +577,48 @@ async def list_trip_stops(
         )
         for s in stops
     ]
+
+
+class AssignDriverRequest(BaseModel):
+    driver_id: int | None = None
+
+
+@router.patch(
+    "/{trip_id}/driver",
+    response_model=TripResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def assign_driver(
+    trip_id: int,
+    body: AssignDriverRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Assign or unassign a driver to a trip."""
+    trip = await _get_trip_or_404(trip_id, db)
+
+    driver: User | None = None
+    if body.driver_id is not None:
+        driver_result = await db.execute(
+            select(User).where(
+                User.id == body.driver_id,
+                User.role == UserRole.driver,
+                User.is_active.is_(True),
+                User.company_id == trip.company_id,
+            )
+        )
+        driver = driver_result.scalar_one_or_none()
+        if driver is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Driver not found or does not belong to this company.",
+            )
+
+    trip.driver_id = body.driver_id
+    trip.driver = driver  # keep relationship in sync so identity map is current
+    await db.commit()
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS))
+    return result.scalar_one()
 
 
 @router.post(

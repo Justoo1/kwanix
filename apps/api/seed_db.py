@@ -135,9 +135,21 @@ async def seed():
             hashed_password=pwd_context.hash("clerk123!"),
             role=UserRole.station_clerk,
         )
-        db.add_all([super_admin, company_admin, clerk])
+        demo_driver = User(
+            company_id=company.id,
+            station_id=None,
+            full_name="Kwame Driver",
+            phone="233541234567",
+            email="driver@stc.kwanix.io",
+            hashed_password=pwd_context.hash("driver123!"),
+            role=UserRole.driver,
+        )
+        db.add_all([super_admin, company_admin, clerk, demo_driver])
         await db.flush()
-        print(f"✓ Users created: {super_admin.email}, {company_admin.email}, {clerk.email}")
+        print(
+            f"✓ Users created: {super_admin.email}, {company_admin.email}, "
+            f"{clerk.email}, {demo_driver.email}"
+        )
 
         # ── Tracking sequence ─────────────────────────────────────────────────
         seq = TrackingSequence(company_id=company.id, last_serial=0)
@@ -152,6 +164,7 @@ async def seed():
     print("  super_admin  : admin@kwanix.io       / admin123!")
     print("  company_admin: manager@stc.kwanix.io / manager123!")
     print("  clerk        : ama@stc.kwanix.io     / clerk123!")
+    print("  driver       : driver@stc.kwanix.io  / driver123!")
 
 
 if __name__ == "__main__":

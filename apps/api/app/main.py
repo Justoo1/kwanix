@@ -26,6 +26,7 @@ from app.routers import (
     admin,
     auth,
     billing,
+    driver,
     parcels,
     public,
     stations,
@@ -91,6 +92,7 @@ app.include_router(vehicles.router, prefix=f"{API_PREFIX}/vehicles", tags=["vehi
 app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["webhooks"])
 app.include_router(billing.router, prefix=f"{API_PREFIX}/billing", tags=["billing"])
 app.include_router(public.router, prefix=f"{API_PREFIX}/public", tags=["public"])
+app.include_router(driver.router, prefix=f"{API_PREFIX}/driver", tags=["driver"])
 
 
 @app.get("/health", tags=["system"])

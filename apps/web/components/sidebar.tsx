@@ -65,10 +65,15 @@ const clerkItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+const driverItems = [
+  { href: "/driver", label: "My Trip", icon: Bus },
+];
+
 function getNavItems(role: UserRole) {
   if (role === "super_admin") return superAdminItems;
   if (role === "company_admin") return companyAdminItems;
   if (role === "station_manager") return managerItems;
+  if (role === "driver") return driverItems;
   return clerkItems;
 }
 
@@ -122,7 +127,7 @@ function SidebarPanel({ role, onClose }: SidebarPanelProps) {
     <aside className="flex flex-col w-64 h-full bg-sidebar border-r border-sidebar-border">
       {/* Logo */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-sidebar-border">
-        <Link href="/dashboard" className="flex items-center gap-2 group" onClick={onClose}>
+        <Link href={role === "driver" ? "/driver" : "/dashboard"} className="flex items-center gap-2 group" onClick={onClose}>
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
             <Route className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
