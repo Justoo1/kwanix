@@ -37,6 +37,7 @@ services:
       ARKESEL_API_KEY: ${ARKESEL_API_KEY:-}
       ARKESEL_SENDER_ID: ${ARKESEL_SENDER_ID:-Kwanix}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-true}
     volumes:

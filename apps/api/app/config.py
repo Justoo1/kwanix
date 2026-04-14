@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1
 
+    # Google Gemini — optional; enables AI parcel insights on public tracking page
+    gemini_api_key: str | None = None
+
     def get_allowed_origins(self) -> list[str]:
         """Parse allowed_origins into a list, accepting comma-separated or JSON array."""
         v = self.allowed_origins.strip()

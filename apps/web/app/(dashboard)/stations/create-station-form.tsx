@@ -1,13 +1,57 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import { MapPin, Loader2 } from "lucide-react";
 import { createStation, type CreateStationState } from "./actions";
+
+interface NominatimResult {
+  lat: string;
+  lon: string;
+  display_name: string;
+}
 
 export default function CreateStationForm() {
   const [state, action, pending] = useActionState<CreateStationState, FormData>(
     createStation,
     undefined
   );
+
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+
+  // Read name + address from DOM to use as geocoding query
+  async function handleGeocode() {
+    setGeocodeError(null);
+    const nameEl = document.getElementById("station-name") as HTMLInputElement | null;
+    const addressEl = document.getElementById("station-address") as HTMLInputElement | null;
+    const query = [nameEl?.value, addressEl?.value, "Ghana"].filter(Boolean).join(", ");
+
+    if (!query.trim()) {
+      setGeocodeError("Enter a station name or address first.");
+      return;
+    }
+
+    setGeocoding(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+        { headers: { "Accept-Language": "en" } }
+      );
+      const results: NominatimResult[] = await res.json();
+      if (results.length === 0) {
+        setGeocodeError("Location not found. Try a more specific address.");
+      } else {
+        setLat(parseFloat(results[0].lat).toFixed(6));
+        setLng(parseFloat(results[0].lon).toFixed(6));
+      }
+    } catch {
+      setGeocodeError("Could not reach geocoding service. Enter coordinates manually.");
+    } finally {
+      setGeocoding(false);
+    }
+  }
 
   if (state !== undefined && !state?.error) {
     return (
@@ -36,6 +80,7 @@ export default function CreateStationForm() {
             Station name
           </label>
           <input
+            id="station-name"
             name="name"
             type="text"
             required
@@ -71,6 +116,7 @@ export default function CreateStationForm() {
             Address <span className="text-zinc-400 font-normal">(optional)</span>
           </label>
           <input
+            id="station-address"
             name="address"
             type="text"
             placeholder="Ring Road, Accra"
@@ -78,6 +124,67 @@ export default function CreateStationForm() {
           />
         </div>
       </div>
+
+      {/* Map coordinates */}
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-zinc-700">Map coordinates</p>
+            <p className="text-xs text-zinc-400">
+              Used for route map on the public tracking page.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleGeocode}
+            disabled={geocoding}
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          >
+            {geocoding ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <MapPin className="h-3 w-3" />
+            )}
+            {geocoding ? "Detecting…" : "Auto-detect"}
+          </button>
+        </div>
+
+        {geocodeError && (
+          <p className="text-xs text-amber-600">{geocodeError}</p>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Latitude</label>
+            <input
+              name="latitude"
+              type="number"
+              step="0.000001"
+              min="-90"
+              max="90"
+              placeholder="5.603717"
+              value={lat}
+              onChange={(e) => setLat(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-600 mb-1">Longitude</label>
+            <input
+              name="longitude"
+              type="number"
+              step="0.000001"
+              min="-180"
+              max="180"
+              placeholder="-0.186964"
+              value={lng}
+              onChange={(e) => setLng(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2 cursor-pointer">
           <input

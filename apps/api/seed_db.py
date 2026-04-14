@@ -76,6 +76,8 @@ async def seed():
             search_aliases=["Neoplan", "Accra", "Accra Station"],
             contact_number="233302123456",
             is_hub=True,
+            latitude=5.603717,
+            longitude=-0.186964,
         )
         kumasi = Station(
             company_id=company.id,
@@ -83,6 +85,8 @@ async def seed():
             location_code="KSI",
             search_aliases=["Kejetia", "Kumasi"],
             contact_number="233322123456",
+            latitude=6.687800,
+            longitude=-1.624000,
         )
         prestea = Station(
             company_id=company.id,
@@ -90,6 +94,8 @@ async def seed():
             location_code="PRE",
             search_aliases=["Prestea Bondaye"],
             contact_number="233312123456",
+            latitude=5.432500,
+            longitude=-2.143600,
         )
         db.add_all([accra, kumasi, prestea])
         await db.flush()

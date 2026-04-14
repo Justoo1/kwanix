@@ -15,11 +15,15 @@ export async function createStation(
   const contact_number = (formData.get("contact_number") as string) || undefined;
   const address = (formData.get("address") as string) || undefined;
   const is_hub = formData.get("is_hub") === "true";
+  const latRaw = formData.get("latitude") as string;
+  const lngRaw = formData.get("longitude") as string;
+  const latitude = latRaw ? parseFloat(latRaw) : undefined;
+  const longitude = lngRaw ? parseFloat(lngRaw) : undefined;
 
   try {
     await apiFetch("/api/v1/stations", {
       method: "POST",
-      body: JSON.stringify({ name, location_code, contact_number, address, is_hub }),
+      body: JSON.stringify({ name, location_code, contact_number, address, is_hub, latitude, longitude }),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to create station.";

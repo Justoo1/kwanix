@@ -20,6 +20,8 @@ class CreateStationRequest(BaseModel):
     address: str | None = None
     city: str | None = None
     is_hub: bool = False
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class StationResponse(BaseModel):
@@ -31,8 +33,21 @@ class StationResponse(BaseModel):
     city: str | None = None
     is_hub: bool
     is_active: bool
+    latitude: float | None = None
+    longitude: float | None = None
 
     model_config = {"from_attributes": True}
+
+
+class UpdateStationRequest(BaseModel):
+    name: str | None = None
+    location_code: str | None = None
+    contact_number: str | None = None
+    address: str | None = None
+    city: str | None = None
+    is_hub: bool | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class PendingParcelSummary(BaseModel):
@@ -78,6 +93,8 @@ async def create_station(
         address=body.address,
         city=body.city,
         is_hub=body.is_hub,
+        latitude=body.latitude,
+        longitude=body.longitude,
     )
     db.add(station)
     await db.commit()
@@ -134,6 +151,46 @@ async def get_pending_parcels(
         )
         for p in parcels
     ]
+
+
+@router.patch(
+    "/{station_id}",
+    response_model=StationResponse,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def update_station(
+    station_id: int,
+    body: UpdateStationRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Update station details (name, code, address, coordinates, hub flag)."""
+    result = await db.execute(select(Station).where(Station.id == station_id))
+    station = result.scalar_one_or_none()
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    if body.name is not None:
+        station.name = body.name
+    if body.location_code is not None:
+        station.location_code = body.location_code
+    if body.contact_number is not None:
+        station.contact_number = body.contact_number
+    if body.address is not None:
+        station.address = body.address
+    if body.city is not None:
+        station.city = body.city
+    if body.is_hub is not None:
+        station.is_hub = body.is_hub
+    # Coordinates may be explicitly set to None to clear them
+    if "latitude" in body.model_fields_set:
+        station.latitude = body.latitude
+    if "longitude" in body.model_fields_set:
+        station.longitude = body.longitude
+
+    await db.commit()
+    await db.refresh(station)
+    return station
 
 
 @router.patch(
