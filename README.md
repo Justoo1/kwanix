@@ -1,6 +1,6 @@
-# RoutePass
+# Kwanix
 
-**RoutePass** is a multi-tenant SaaS platform for transit management in Ghana — combining ticketing, parcel logistics, fleet tracking, and billing in a single system.
+**Kwanix** is a multi-tenant SaaS platform for transit management in Ghana — combining ticketing, parcel logistics, fleet tracking, and billing in a single system.
 
 ---
 
@@ -40,7 +40,7 @@
 
 ## Overview
 
-RoutePass is built for inter-city bus companies. It handles the full operational loop:
+Kwanix is built for inter-city bus companies. It handles the full operational loop:
 
 1. **Schedule trips** → assign vehicles and drivers  
 2. **Sell tickets** at the counter or let passengers book online  
@@ -279,7 +279,7 @@ After `make seed`:
 
 | Role | Email | Password |
 |------|-------|----------|
-| `super_admin` | admin@routepass.com | admin123 |
+| `super_admin` | admin@Kwanix.com | admin123 |
 | `company_admin` | stcadmin@stc.com | admin123 |
 | `station_clerk` | clerk@accra.stc.com | clerk123 |
 
@@ -331,7 +331,7 @@ bash infrastructure/scripts/generate_types.sh
 ## Project Structure
 
 ```
-routepass/
+Kwanix/
 ├── apps/
 │   ├── api/                        # FastAPI backend
 │   │   ├── app/
