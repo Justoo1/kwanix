@@ -45,6 +45,9 @@ interface TripDetail {
   vehicle_id: number
   vehicle_plate: string | null
   vehicle_capacity: number | null
+  vehicle_model: string | null
+  vehicle_default_driver_id: number | null
+  vehicle_default_driver_name: string | null
   departure_station_name: string | null
   destination_station_name: string | null
   departure_time: string
@@ -175,8 +178,9 @@ export default async function TripDetailPage({
             </p>
             <p className="text-xs text-zinc-400 mt-0.5">
               {trip.vehicle_plate}
+              {trip.vehicle_model ? ` · ${trip.vehicle_model}` : ""}
               {trip.vehicle_capacity
-                ? ` · ${trip.vehicle_capacity}-seat vehicle`
+                ? ` · ${trip.vehicle_capacity} seats`
                 : ""}
             </p>
           </div>
@@ -256,6 +260,8 @@ export default async function TripDetailPage({
           tripId={trip.id}
           currentDriverId={trip.driver_id}
           currentDriverName={trip.driver_name}
+          vehicleDefaultDriverId={trip.vehicle_default_driver_id}
+          vehicleDefaultDriverName={trip.vehicle_default_driver_name}
         />
       )}
 

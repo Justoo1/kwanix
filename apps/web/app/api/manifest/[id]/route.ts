@@ -14,7 +14,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+// Prefer the internal Docker URL (API_INTERNAL_URL) for server-to-server requests,
+// matching the same priority order used in lib/api.ts (apiFetch).
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -25,9 +30,15 @@ export async function GET(_req: NextRequest, { params }: Context) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const upstream = await fetch(`${API_BASE}/api/v1/trips/${id}/manifest`, {
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  })
+  let upstream: Response
+  try {
+    upstream = await fetch(`${API_BASE}/api/v1/trips/${id}/manifest`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Could not reach API"
+    return NextResponse.json({ error: `Manifest unavailable: ${msg}` }, { status: 502 })
+  }
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => "Manifest unavailable")

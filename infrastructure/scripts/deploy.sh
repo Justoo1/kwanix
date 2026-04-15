@@ -28,6 +28,18 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
+echo "==> Ensuring swap is enabled (2 GB)"
+if [ "$(swapon --show | wc -l)" -eq 0 ]; then
+  fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -qxF '/swapfile none swap sw 0 0' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "    Swap created and enabled."
+else
+  echo "    Swap already active."
+fi
+
 echo "==> [$ENV] Pulling latest code from $BRANCH"
 git fetch origin
 git checkout "$BRANCH"

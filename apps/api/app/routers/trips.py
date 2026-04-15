@@ -34,7 +34,7 @@ VALID_TRANSITIONS: dict[TripStatus, set[TripStatus]] = {
 _MANAGER_ROLES = (UserRole.station_manager, UserRole.company_admin, UserRole.super_admin)
 
 _TRIP_OPTS = [
-    selectinload(Trip.vehicle),
+    selectinload(Trip.vehicle).selectinload(Vehicle.default_driver),
     selectinload(Trip.departure_station),
     selectinload(Trip.destination_station),
     selectinload(Trip.parcels),
@@ -46,6 +46,11 @@ _TRIP_OPTS = [
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 
+class StopInput(BaseModel):
+    station_id: int
+    eta: datetime | None = None
+
+
 class CreateTripRequest(BaseModel):
     vehicle_id: int
     departure_station_id: int
@@ -53,6 +58,7 @@ class CreateTripRequest(BaseModel):
     departure_time: datetime
     base_fare_ghs: float | None = None
     booking_open: bool = False
+    stops: list[StopInput] = []
 
 
 class TripResponse(BaseModel):
@@ -66,6 +72,9 @@ class TripResponse(BaseModel):
     price_ticket_base: float | None = None
     vehicle_plate: str | None = None
     vehicle_capacity: int | None = None
+    vehicle_model: str | None = None
+    vehicle_default_driver_id: int | None = None
+    vehicle_default_driver_name: str | None = None
     departure_station_name: str | None = None
     destination_station_name: str | None = None
     parcel_count: int = 0
@@ -99,6 +108,13 @@ class TripResponse(BaseModel):
         try:
             result["vehicle_plate"] = data.vehicle.plate_number
             result["vehicle_capacity"] = data.vehicle.capacity
+            result["vehicle_model"] = data.vehicle.model
+            result["vehicle_default_driver_id"] = data.vehicle.default_driver_id
+            result["vehicle_default_driver_name"] = (
+                data.vehicle.default_driver.full_name
+                if data.vehicle.default_driver
+                else None
+            )
         except Exception as exc:
             logger.debug("vehicle not loaded on trip", trip_id=data.id, error=str(exc))
         try:
@@ -203,8 +219,19 @@ async def create_trip(
         departure_time=body.departure_time,
         price_ticket_base=body.base_fare_ghs,
         booking_open=body.booking_open,
+        driver_id=vehicle.default_driver_id,
     )
     db.add(trip)
+    await db.flush()
+
+    for i, stop_input in enumerate(body.stops, start=1):
+        db.add(TripStop(
+            trip_id=trip.id,
+            station_id=stop_input.station_id,
+            sequence_order=i,
+            eta=stop_input.eta,
+        ))
+
     await db.commit()
 
     result = await db.execute(select(Trip).where(Trip.id == trip.id).options(*_TRIP_OPTS))
@@ -218,6 +245,7 @@ class GenerateScheduleRequest(BaseModel):
     departure_time: str  # HH:MM
     days_ahead: int = Field(..., ge=1, le=30)
     base_fare_ghs: float | None = None
+    stops: list[StopInput] = []
 
 
 class GenerateScheduleResponse(BaseModel):
@@ -246,6 +274,11 @@ async def generate_schedule(
             status_code=400, detail="departure_time must be a valid HH:MM string"
         ) from exc
 
+    vehicle_result = await db.execute(select(Vehicle).where(Vehicle.id == body.vehicle_id))
+    vehicle = vehicle_result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
     today = datetime.now(UTC).date()
     trip_ids: list[int] = []
 
@@ -259,9 +292,17 @@ async def generate_schedule(
             destination_station_id=body.destination_station_id,
             departure_time=dt,
             price_ticket_base=body.base_fare_ghs,
+            driver_id=vehicle.default_driver_id,
         )
         db.add(trip)
         await db.flush()
+        for seq, stop_input in enumerate(body.stops, start=1):
+            db.add(TripStop(
+                trip_id=trip.id,
+                station_id=stop_input.station_id,
+                sequence_order=seq,
+                eta=stop_input.eta,
+            ))
         trip_ids.append(trip.id)
 
     await db.commit()

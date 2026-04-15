@@ -11,12 +11,16 @@ interface Props {
   tripId: number;
   currentDriverId: number | null | undefined;
   currentDriverName: string | null | undefined;
+  vehicleDefaultDriverId?: number | null;
+  vehicleDefaultDriverName?: string | null;
 }
 
 export default function AssignDriverButton({
   tripId,
   currentDriverId,
   currentDriverName,
+  vehicleDefaultDriverId,
+  vehicleDefaultDriverName,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -76,11 +80,22 @@ export default function AssignDriverButton({
       </div>
 
       <div className="flex items-center justify-between gap-4" ref={dropdownRef}>
-        <div>
+        <div className="space-y-1">
           {currentDriverName ? (
             <p className="text-sm font-medium text-zinc-900">{currentDriverName}</p>
           ) : (
             <p className="text-sm text-zinc-400">No driver assigned</p>
+          )}
+          {/* Suggest the vehicle's default driver when the trip has no driver yet */}
+          {!currentDriverId && vehicleDefaultDriverId && vehicleDefaultDriverName && (
+            <button
+              onClick={() => assign(vehicleDefaultDriverId)}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              <UserCheck className="size-3" />
+              Use vehicle default: {vehicleDefaultDriverName}
+            </button>
           )}
         </div>
 
