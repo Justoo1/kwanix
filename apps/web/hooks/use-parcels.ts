@@ -79,11 +79,30 @@ export function useActiveTrips() {
 export function useLoadParcel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { tracking_number: string; trip_id: number }) =>
-      clientFetch<{ success: boolean; message: string; tracking_number: string }>(
+    mutationFn: async (body: { tracking_number: string; trip_id: number }) => {
+      // QR codes encode tracking_number; the load endpoint expects parcel_id.
+      // Resolve from cache first, fall back to a search API call.
+      let parcelId: number | null = null;
+      const cachedEntries = qc.getQueriesData<ParcelRow[]>({ queryKey: parcelKeys.all });
+      for (const [, data] of cachedEntries) {
+        const found = Array.isArray(data)
+          ? data.find((p) => p.tracking_number === body.tracking_number)
+          : undefined;
+        if (found) { parcelId = found.id; break; }
+      }
+      if (!parcelId) {
+        const results = await clientFetch<ParcelRow[]>(
+          `parcels?q=${encodeURIComponent(body.tracking_number)}`
+        );
+        const found = results.find((p) => p.tracking_number === body.tracking_number);
+        if (!found) throw new Error("Parcel not found");
+        parcelId = found.id;
+      }
+      return clientFetch<{ success: boolean; message: string; tracking_number: string }>(
         "parcels/load",
-        { method: "PATCH", body: JSON.stringify(body) }
-      ),
+        { method: "PATCH", body: JSON.stringify({ parcel_id: parcelId, trip_id: body.trip_id }) }
+      );
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: parcelKeys.all });
     },

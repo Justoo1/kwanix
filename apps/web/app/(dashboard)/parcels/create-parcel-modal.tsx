@@ -1,15 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useForm } from "react-hook-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm, useWatch } from "react-hook-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { clientFetch } from "@/lib/client-api";
 import { parcelKeys, type ParcelRow } from "@/hooks/use-parcels";
 import { markPrinted } from "@/lib/print-tracker";
 import ParcelPrint from "./parcel-print";
+
+interface WeightTier {
+  max_kg: number | null;
+  fee_ghs: number;
+}
+
+function calcFee(weightKg: number, tiers: WeightTier[]): number | null {
+  if (tiers.length === 0) return null;
+  for (const tier of tiers) {
+    if (tier.max_kg === null || weightKg <= tier.max_kg) return tier.fee_ghs;
+  }
+  return tiers[tiers.length - 1].fee_ghs;
+}
 
 interface Station {
   id: number;
@@ -44,10 +57,30 @@ export default function CreateParcelModal({ stations, open, onClose }: Props) {
     register,
     handleSubmit,
     reset,
+    setValue,
+    control,
     formState: { errors },
   } = useForm<FormValues>({
     defaultValues: { fee_ghs: "0", description: "" },
   });
+
+  // Fetch weight tiers (accessible to all roles including station_clerk)
+  const { data: tiersData } = useQuery({
+    queryKey: ["weight-tiers"],
+    queryFn: () => clientFetch<{ tiers: WeightTier[] }>("admin/companies/me/weight-tiers"),
+    staleTime: 5 * 60_000,
+  });
+  const tiers = useMemo(() => tiersData?.tiers ?? [], [tiersData]);
+
+  // Auto-fill fee when weight changes
+  const weightStr = useWatch({ control, name: "weight_kg" });
+  useEffect(() => {
+    const w = parseFloat(weightStr);
+    if (!isNaN(w) && w > 0 && tiers.length > 0) {
+      const auto = calcFee(w, tiers);
+      if (auto !== null) setValue("fee_ghs", auto.toFixed(2));
+    }
+  }, [weightStr, tiers, setValue]);
 
   const mutation = useMutation({
     mutationFn: (body: object) =>

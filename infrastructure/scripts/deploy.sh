@@ -36,7 +36,10 @@ git pull origin "$BRANCH"
 echo "==> [$ENV] Building images"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --pull
 
-echo "==> [$ENV] Starting services (rolling restart)"
+echo "==> [$ENV] Removing any stopped containers from a previous failed deploy"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" rm -f --stop 2>/dev/null || true
+
+echo "==> [$ENV] Starting services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
 
 API_PORT=$([ "$ENV" = "production" ] && echo "8100" || echo "8101")

@@ -3088,12 +3088,14 @@ class TestWeightTierPricing:
         assert resp.json()["fee_ghs"] == 5.0  # explicit fee wins
 
     @pytest.mark.asyncio
-    async def test_weight_tiers_requires_company_admin(self, client, clerk_token):
+    async def test_weight_tiers_readable_by_clerk(self, client, clerk_token):
+        # Clerks need to read tiers to auto-fill the fee when logging parcels
         resp = await client.get(
             "/api/v1/admin/companies/me/weight-tiers",
             headers={"Authorization": f"Bearer {clerk_token}"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert "tiers" in resp.json()
 
 
 class TestStationAssignment:

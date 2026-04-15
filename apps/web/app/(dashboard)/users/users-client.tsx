@@ -77,6 +77,12 @@ export default function UsersClient({
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
+  const [pwTarget, setPwTarget] = useState<UserResponse | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [pwSubmitting, setPwSubmitting] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+
   const canInvite = viewerRole === "company_admin" || viewerRole === "super_admin";
 
   async function handleInvite(e: React.FormEvent) {
@@ -139,6 +145,25 @@ export default function UsersClient({
       setActivateError(err instanceof Error ? err.message : "Failed to activate user.");
     } finally {
       setActivating(false);
+    }
+  }
+
+  async function handlePasswordChange() {
+    if (!pwTarget) return;
+    setPwSubmitting(true);
+    setPwError(null);
+    setPwSuccess(false);
+    try {
+      await clientFetch(`admin/users/${pwTarget.id}/password`, {
+        method: "PATCH",
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setPwSuccess(true);
+      setNewPassword("");
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Failed to change password.");
+    } finally {
+      setPwSubmitting(false);
     }
   }
 
@@ -256,6 +281,17 @@ export default function UsersClient({
                           className="text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
                         >
                           Assign station
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPwError(null);
+                            setPwSuccess(false);
+                            setNewPassword("");
+                            setPwTarget(u);
+                          }}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                        >
+                          Change password
                         </button>
                         {u.is_active ? (
                           <button
@@ -516,6 +552,65 @@ export default function UsersClient({
                 {assigning ? "Saving…" : "Save"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Change password dialog ───────────────────────────────────────────── */}
+      {pwTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setPwTarget(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white shadow-xl p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-zinc-900">Change password</h2>
+            {pwSuccess ? (
+              <div className="space-y-4">
+                <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                  Password changed successfully for <strong>{pwTarget.full_name}</strong>.
+                </p>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setPwTarget(null)}
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-zinc-600">
+                  Set a new password for <strong>{pwTarget.full_name}</strong>. Minimum 8 characters.
+                </p>
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                />
+                {pwError && (
+                  <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {pwError}
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setPwTarget(null)}
+                    disabled={pwSubmitting}
+                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePasswordChange}
+                    disabled={pwSubmitting || newPassword.length < 8}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {pwSubmitting ? "Saving…" : "Set password"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

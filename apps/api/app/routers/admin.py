@@ -226,14 +226,17 @@ class WeightTiersResponse(BaseModel):
     tiers: list[WeightTierItem]
 
 
+_tiers_roles = require_role(UserRole.company_admin, UserRole.super_admin, UserRole.station_clerk)
+
+
 @router.get(
     "/companies/me/weight-tiers",
     response_model=WeightTiersResponse,
-    dependencies=[Depends(require_role(UserRole.company_admin, UserRole.super_admin))],
+    dependencies=[Depends(_tiers_roles)],
 )
 async def get_weight_tiers(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+    current_user: User = Depends(_tiers_roles),
 ):
     """Return parcel weight-tier pricing for the company."""
     result = await db.execute(select(Company).where(Company.id == current_user.company_id))
@@ -464,6 +467,35 @@ async def activate_user(
         )
 
     user.is_active = True
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@router.patch("/users/{user_id}/password", response_model=UserResponse)
+async def reset_user_password(
+    user_id: int,
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Reset any user's password (company_admin for own company, super_admin for all)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if current_user.role == UserRole.company_admin and user.company_id != current_user.company_id:
+        raise HTTPException(status_code=403, detail="Cannot modify a user from another company.")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
+
+    user.hashed_password = hash_password(body.new_password)
     await db.commit()
     await db.refresh(user)
     return user

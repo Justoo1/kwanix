@@ -7,9 +7,17 @@ import {
   AlertCircle,
   ArrowRight,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
+import TrackingMap from "./TrackingMapClient";
+import ParcelChat from "./ParcelChat";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Server Components run inside Docker — use the internal service URL, not the
+// browser-facing NEXT_PUBLIC_ variable which resolves to localhost.
+const API_BASE =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 interface PublicParcelStatus {
   tracking_number: string;
@@ -19,6 +27,19 @@ interface PublicParcelStatus {
   bus_plate: string | null;
   last_updated: string;
   return_reason: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
+  destination_lat: number | null;
+  destination_lng: number | null;
+  vehicle_lat: number | null;
+  vehicle_lng: number | null;
+  departure_time: string | null;
+  trip_status: string | null;
+}
+
+interface AIInsight {
+  message: string;
+  eta: string | null;
 }
 
 export async function generateMetadata({
@@ -89,6 +110,7 @@ export default async function TrackPage({
 
   let parcel: PublicParcelStatus | null = null;
   let error: string | null = null;
+  let aiInsight: AIInsight | null = null;
 
   try {
     const res = await fetch(
@@ -104,6 +126,21 @@ export default async function TrackPage({
     }
   } catch {
     error = "Could not reach the server. Please try again.";
+  }
+
+  // Fetch AI insight in parallel — fail silently
+  if (parcel) {
+    try {
+      const aiRes = await fetch(
+        `${API_BASE}/api/v1/track/${encodeURIComponent(id)}/ai-insight`,
+        { cache: "no-store" }
+      );
+      if (aiRes.ok) {
+        aiInsight = await aiRes.json();
+      }
+    } catch {
+      // AI insight is optional — ignore failures
+    }
   }
 
   return (
@@ -122,13 +159,16 @@ export default async function TrackPage({
         {error ? (
           <ErrorCard id={id} message={error} />
         ) : parcel ? (
-          <TrackCard parcel={parcel} />
+          <TrackCard parcel={parcel} aiInsight={aiInsight} />
         ) : null}
       </div>
 
       <p className="mt-8 text-xs text-zinc-600 text-center">
         For assistance, contact your nearest Kwanix station.
       </p>
+
+      {/* Floating AI chat — only shown when parcel is found */}
+      {parcel && <ParcelChat trackingId={id} />}
     </div>
   );
 }
@@ -149,7 +189,19 @@ function ErrorCard({ id, message }: { id: string; message: string }) {
 
 // ── Main tracking card ─────────────────────────────────────────────────────────
 
-function TrackCard({ parcel }: { parcel: PublicParcelStatus }) {
+function TrackCard({
+  parcel,
+  aiInsight,
+}: {
+  parcel: PublicParcelStatus;
+  aiInsight: AIInsight | null;
+}) {
+  const hasMap =
+    parcel.origin_lat != null &&
+    parcel.origin_lng != null &&
+    parcel.destination_lat != null &&
+    parcel.destination_lng != null;
+
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shadow-2xl overflow-hidden">
       {/* Header */}
@@ -174,6 +226,39 @@ function TrackCard({ parcel }: { parcel: PublicParcelStatus }) {
         <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
         <span className="font-medium text-zinc-200 truncate">{parcel.destination}</span>
       </div>
+
+      {/* Map — only renders when station coordinates are configured */}
+      {hasMap && (
+        <div className="border-b border-zinc-800 overflow-hidden">
+          <TrackingMap
+            originLat={parcel.origin_lat!}
+            originLng={parcel.origin_lng!}
+            destinationLat={parcel.destination_lat!}
+            destinationLng={parcel.destination_lng!}
+            originName={parcel.origin}
+            destinationName={parcel.destination}
+            vehicleLat={parcel.vehicle_lat}
+            vehicleLng={parcel.vehicle_lng}
+            status={parcel.status}
+          />
+        </div>
+      )}
+
+      {/* AI Insight card */}
+      {aiInsight && (
+        <div className="mx-6 mt-5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+              AI Update
+            </span>
+          </div>
+          <p className="text-sm text-indigo-100 leading-relaxed">{aiInsight.message}</p>
+          {aiInsight.eta && (
+            <p className="mt-1.5 text-xs text-indigo-300 font-medium">{aiInsight.eta}</p>
+          )}
+        </div>
+      )}
 
       {/* Timeline */}
       <div className="px-6 py-6">

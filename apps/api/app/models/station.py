@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -21,6 +21,8 @@ class Station(Base, TimestampMixin):
     city: Mapped[str | None] = mapped_column(String(100))
     is_hub: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="stations")  # noqa: F821

@@ -7,6 +7,47 @@ import { Bus, CheckCircle2, QrCode, Users, XCircle } from "lucide-react";
 import { useDriverPassengers, useDriverScan, useDriverTrip } from "@/hooks/use-driver";
 import type { DriverPassenger, DriverTripData } from "@/hooks/use-driver";
 
+// ── GPS location push ──────────────────────────────────────────────────────────
+
+function useGpsPush(tripStatus: string | undefined) {
+  useEffect(() => {
+    const active = tripStatus === "loading" || tripStatus === "departed";
+    if (!active || !navigator.geolocation) return;
+
+    async function pushLocation(lat: number, lng: number) {
+      try {
+        await fetch("/api/proxy/driver/location", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ latitude: lat, longitude: lng }),
+        });
+      } catch {
+        /* ignore — fire and forget */
+      }
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        pushLocation(pos.coords.latitude, pos.coords.longitude);
+      },
+      () => { /* ignore errors */ },
+      { enableHighAccuracy: true, maximumAge: 30_000 }
+    );
+
+    const interval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => pushLocation(pos.coords.latitude, pos.coords.longitude),
+        () => { /* ignore */ }
+      );
+    }, 30_000);
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      clearInterval(interval);
+    };
+  }, [tripStatus]);
+}
+
 // ── Audio helpers ──────────────────────────────────────────────────────────────
 
 function playBeep(type: "success" | "error") {
@@ -58,6 +99,9 @@ export default function DriverDashboardClient({
 }: DriverDashboardClientProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("manifest");
   const { data: tripData } = useDriverTrip(initialData ?? undefined);
+
+  // Push GPS location to backend while trip is active
+  useGpsPush(tripData?.status);
 
   if (!tripData) {
     return (

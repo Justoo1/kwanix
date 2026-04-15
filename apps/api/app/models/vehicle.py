@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -28,6 +28,9 @@ class Vehicle(Base, TimestampMixin):
     default_driver_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    current_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_gps_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="vehicles")  # noqa: F821

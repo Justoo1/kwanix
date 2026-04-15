@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,6 +10,7 @@ from app.dependencies.auth import get_db_for_user, require_role
 from app.models.ticket import Ticket, TicketStatus
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
+from app.models.vehicle import Vehicle
 
 router = APIRouter()
 
@@ -41,6 +42,15 @@ class DriverPassengerResponse(BaseModel):
 
 class ScanTicketRequest(BaseModel):
     payload: str  # format: TICKET:{ticket_id}:{trip_id}:{seat_number}
+
+
+class LocationUpdateRequest(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+
+
+class LocationUpdateResponse(BaseModel):
+    accepted: bool
 
 
 class ScanTicketResponse(BaseModel):
@@ -221,3 +231,27 @@ async def scan_ticket(
         status=TicketStatus.used.value,
         trip_info=trip_info,
     )
+
+
+@router.post("/location", response_model=LocationUpdateResponse)
+async def update_location(
+    body: LocationUpdateRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(require_role(UserRole.driver)),
+):
+    """Push the driver's current GPS coordinates to their active trip's vehicle."""
+    trip = await _get_driver_active_trip(current_user, db, statuses=_SCAN_STATUSES)
+    if trip is None or trip.vehicle_id is None:
+        # No active trip — accept silently (driver may be between trips)
+        return LocationUpdateResponse(accepted=False)
+
+    vehicle_result = await db.execute(select(Vehicle).where(Vehicle.id == trip.vehicle_id))
+    vehicle = vehicle_result.scalar_one_or_none()
+    if vehicle is None:
+        return LocationUpdateResponse(accepted=False)
+
+    vehicle.current_latitude = body.latitude
+    vehicle.current_longitude = body.longitude
+    vehicle.last_gps_update = datetime.now(UTC)
+    await db.commit()
+    return LocationUpdateResponse(accepted=True)

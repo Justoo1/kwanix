@@ -33,6 +33,36 @@ export default function DriversClient({ drivers: initialDrivers, canManage }: Dr
   const [deactivateTarget, setDeactivateTarget] = useState<UserResponse | null>(null);
   const [deactivating, setDeactivating] = useState(false);
 
+  const [pwTarget, setPwTarget] = useState<UserResponse | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [pwSubmitting, setPwSubmitting] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+
+  async function handlePasswordChange() {
+    if (!pwTarget) return;
+    setPwSubmitting(true);
+    setPwError(null);
+    try {
+      await clientFetch(`admin/users/${pwTarget.id}/password`, {
+        method: "PATCH",
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setPwSuccess(true);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Failed to change password.");
+    } finally {
+      setPwSubmitting(false);
+    }
+  }
+
+  function closePwModal() {
+    setPwTarget(null);
+    setNewPassword("");
+    setPwError(null);
+    setPwSuccess(false);
+  }
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -146,14 +176,22 @@ export default function DriversClient({ drivers: initialDrivers, canManage }: Dr
                   </td>
                   {canManage && (
                     <td className="px-6 py-4">
-                      {d.is_active && (
+                      <div className="flex items-center gap-3">
                         <button
-                          onClick={() => setDeactivateTarget(d)}
-                          className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors"
+                          onClick={() => { setPwTarget(d); setNewPassword(""); setPwError(null); setPwSuccess(false); }}
+                          className="text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors"
                         >
-                          Deactivate
+                          Change password
                         </button>
-                      )}
+                        {d.is_active && (
+                          <button
+                            onClick={() => setDeactivateTarget(d)}
+                            className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors"
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -259,6 +297,56 @@ export default function DriversClient({ drivers: initialDrivers, canManage }: Dr
                   </button>
                 </div>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Change password modal */}
+      {pwTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={closePwModal} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white shadow-xl p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-zinc-900">Change password</h2>
+            {pwSuccess ? (
+              <div className="space-y-4">
+                <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
+                  Password changed successfully for <strong>{pwTarget.full_name}</strong>.
+                </p>
+                <div className="flex justify-end">
+                  <button onClick={closePwModal} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 transition-colors">
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-zinc-600">
+                  Set a new password for <strong>{pwTarget.full_name}</strong>. Minimum 8 characters.
+                </p>
+                {pwError && (
+                  <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pwError}</p>
+                )}
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                />
+                <div className="flex justify-end gap-2">
+                  <button onClick={closePwModal} disabled={pwSubmitting} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePasswordChange}
+                    disabled={pwSubmitting || newPassword.length < 8}
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors"
+                  >
+                    {pwSubmitting ? "Saving…" : "Save password"}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
