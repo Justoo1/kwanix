@@ -60,9 +60,7 @@ class Ticket(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     refund_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    eta_sms_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    eta_sms_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     trip: Mapped["Trip"] = relationship(back_populates="tickets")  # noqa: F821

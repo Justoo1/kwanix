@@ -679,12 +679,12 @@ export function VehiclesView({ canCreate, canManage }: VehiclesViewProps) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vehicles</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-[22px] font-bold text-foreground">Vehicles</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Fleet registered to your company.
           </p>
         </div>

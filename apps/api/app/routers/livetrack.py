@@ -27,8 +27,8 @@ from app.models.vehicle import Vehicle
 
 router = APIRouter()
 
-_GPS_STALE_SECONDS = 300       # 5 minutes — GPS older than this is not shown to passengers
-_DEAD_VEHICLE_MINUTES = 15     # alert threshold for fleet-level monitoring
+_GPS_STALE_SECONDS = 300  # 5 minutes — GPS older than this is not shown to passengers
+_DEAD_VEHICLE_MINUTES = 15  # alert threshold for fleet-level monitoring
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -80,6 +80,11 @@ class FleetVehicleItem(BaseModel):
     lng: float
     last_update: str
     is_stale: bool
+    # Route endpoint coordinates for map polylines
+    origin_lat: float | None = None
+    origin_lng: float | None = None
+    dest_lat: float | None = None
+    dest_lng: float | None = None
 
 
 class DeadVehicleAlert(BaseModel):
@@ -148,9 +153,7 @@ async def get_trip_position(
             # Compute ETA to destination if station has coordinates
             dest = trip.destination_station
             if dest and dest.latitude is not None and dest.longitude is not None:
-                dist_km = _haversine_km(
-                    vehicle_lat, vehicle_lng, dest.latitude, dest.longitude
-                )
+                dist_km = _haversine_km(vehicle_lat, vehicle_lng, dest.latitude, dest.longitude)
                 eta_mins = _eta_minutes(dist_km)
 
     dep_station = trip.departure_station
@@ -215,19 +218,32 @@ async def get_fleet_map(
         # Find the most recent active trip for this vehicle
         active_trip = None
         for t in v.trips:
-            if t.status in (TripStatus.loading, TripStatus.departed):
-                if active_trip is None or t.departure_time > active_trip.departure_time:
-                    active_trip = t
+            if t.status in (TripStatus.loading, TripStatus.departed) and (
+                active_trip is None or t.departure_time > active_trip.departure_time
+            ):
+                active_trip = t
 
         route: str | None = None
         trip_id: int | None = None
         trip_status: str | None = None
+        origin_lat: float | None = None
+        origin_lng: float | None = None
+        dest_lat: float | None = None
+        dest_lng: float | None = None
         if active_trip:
             trip_id = active_trip.id
             trip_status = active_trip.status.value
-            dep = active_trip.departure_station.name if active_trip.departure_station else "?"
-            dst = active_trip.destination_station.name if active_trip.destination_station else "?"
+            dep_st = active_trip.departure_station
+            dst_st = active_trip.destination_station
+            dep = dep_st.name if dep_st else "?"
+            dst = dst_st.name if dst_st else "?"
             route = f"{dep} → {dst}"
+            if dep_st and dep_st.latitude is not None and dep_st.longitude is not None:
+                origin_lat = dep_st.latitude
+                origin_lng = dep_st.longitude
+            if dst_st and dst_st.latitude is not None and dst_st.longitude is not None:
+                dest_lat = dst_st.latitude
+                dest_lng = dst_st.longitude
 
         items.append(
             FleetVehicleItem(
@@ -240,6 +256,10 @@ async def get_fleet_map(
                 lng=v.current_longitude,
                 last_update=v.last_gps_update.isoformat() if v.last_gps_update else "",
                 is_stale=is_stale,
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                dest_lat=dest_lat,
+                dest_lng=dest_lng,
             )
         )
 

@@ -6,6 +6,7 @@ import {
   Tag,
   BarChart3,
   Lightbulb,
+  BrainCircuit,
 } from "lucide-react";
 
 import { getSession } from "@/lib/session";
@@ -93,78 +94,84 @@ export default async function IntelligencePage() {
   ]);
 
   const criticalCount = slaRisks.filter((r) => r.severity === "critical").length;
+  const uniqueRoutes = new Set(
+    heatmapCells.map((c) => `${c.departure_station_id}-${c.destination_station_id}`)
+  ).size;
+  const avgOccupancy =
+    heatmapCells.length > 0
+      ? heatmapCells.reduce((s, c) => s + c.avg_occupancy_pct, 0) / heatmapCells.length
+      : 0;
+
+  const hasData = heatmapCells.length > 0 || pricingSuggestions.length > 0 || slaRisks.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-zinc-900">Intelligence</h1>
-        <p className="text-sm text-zinc-500 mt-1">
+        <h1 className="text-[22px] font-bold text-foreground">Intelligence</h1>
+        <p className="text-[13px] text-muted-foreground mt-0.5">
           Demand forecasting, pricing suggestions, and SLA risk monitoring.
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide flex items-center gap-1">
-            <BarChart3 className="h-3 w-3" /> Routes tracked
-          </p>
-          <p className="text-2xl font-bold text-zinc-900 mt-1">
-            {new Set(heatmapCells.map((c) => `${c.departure_station_id}-${c.destination_station_id}`)).size}
-          </p>
-        </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-          <p className="text-xs font-medium text-amber-600 uppercase tracking-wide flex items-center gap-1">
-            <Tag className="h-3 w-3" /> Pricing alerts
-          </p>
-          <p className="text-2xl font-bold text-amber-700 mt-1">{pricingSuggestions.length}</p>
-        </div>
-        <div className={`rounded-xl border p-4 shadow-sm ${criticalCount > 0 ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"}`}>
-          <p className={`text-xs font-medium uppercase tracking-wide flex items-center gap-1 ${criticalCount > 0 ? "text-red-600" : "text-zinc-500"}`}>
-            <AlertTriangle className="h-3 w-3" /> SLA risks
-          </p>
-          <p className={`text-2xl font-bold mt-1 ${criticalCount > 0 ? "text-red-700" : "text-zinc-400"}`}>
-            {slaRisks.length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-          <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide flex items-center gap-1">
-            <Lightbulb className="h-3 w-3" /> Opportunities
-          </p>
-          <p className="text-2xl font-bold text-emerald-700 mt-1">{opportunities.length}</p>
-        </div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <KpiCard
+          icon={<BarChart3 className="h-4 w-4 text-primary" />}
+          label="Routes Tracked"
+          value={String(uniqueRoutes)}
+          color="text-primary"
+          bgColor="bg-primary/10"
+        />
+        <KpiCard
+          icon={<TrendingUp className="h-4 w-4 text-blue-500" />}
+          label="Avg Occupancy"
+          value={`${avgOccupancy.toFixed(1)}%`}
+          color="text-blue-600"
+          bgColor="bg-blue-500/10"
+        />
+        <KpiCard
+          icon={<Tag className="h-4 w-4 text-amber-500" />}
+          label="Pricing Alerts"
+          value={String(pricingSuggestions.length)}
+          color="text-amber-600"
+          bgColor="bg-amber-500/10"
+        />
+        <KpiCard
+          icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+          label="SLA Risks"
+          value={String(slaRisks.length)}
+          color={criticalCount > 0 ? "text-red-600" : "text-muted-foreground"}
+          bgColor={criticalCount > 0 ? "bg-red-500/10" : "bg-muted/50"}
+        />
       </div>
 
       {/* SLA Risks */}
       {slaRisks.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-zinc-700 mb-3 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-500" /> SLA Risk Parcels
-          </h2>
-          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 border-b border-zinc-200">
-                <tr>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Tracking</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Route</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Receiver</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Hours Left</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Severity</th>
+          <SectionHead icon={<AlertTriangle className="h-4 w-4 text-red-500" />} title="SLA Risk Parcels" />
+          <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-muted/30">
+                  {["Tracking", "Route", "Receiver", "Hours Left", "Severity"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-border">
                 {slaRisks.map((r) => (
-                  <tr key={r.parcel_id}>
-                    <td className="px-4 py-2 font-mono text-xs text-zinc-800">{r.tracking_number}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">
+                  <tr key={r.parcel_id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-[12px] text-foreground">{r.tracking_number}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">
                       {r.origin_station_name} → {r.destination_station_name}
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{r.receiver_name}</td>
-                    <td className="px-4 py-2 text-xs font-medium text-zinc-800">
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{r.receiver_name}</td>
+                    <td className="px-5 py-3.5 text-[13px] font-semibold text-foreground">
                       {r.hours_remaining.toFixed(1)}h
                     </td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                    <td className="px-5 py-3.5">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                         r.severity === "critical"
                           ? "bg-red-100 text-red-700"
                           : r.severity === "warning"
@@ -188,32 +195,38 @@ export default async function IntelligencePage() {
       {/* Revenue Opportunities */}
       {opportunities.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-zinc-700 mb-3 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-500" /> Revenue Opportunities
-          </h2>
-          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 border-b border-zinc-200">
-                <tr>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Route</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Day</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Hour</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Avg Occupancy</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Next Date</th>
+          <SectionHead icon={<Lightbulb className="h-4 w-4 text-primary" />} title="Revenue Opportunities" />
+          <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-muted/30">
+                  {["Route", "Day", "Hour", "Avg Occupancy", "Next Date"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-border">
                 {opportunities.map((o, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-2 text-xs font-medium text-zinc-800">
+                  <tr key={i} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 text-[13px] font-semibold text-foreground">
                       {o.departure_station_name} → {o.destination_station_name}
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{DAYS[o.day_of_week]}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{o.hour_of_day}:00</td>
-                    <td className="px-4 py-2 text-xs font-semibold text-emerald-700">
-                      {o.historical_avg_occupancy_pct.toFixed(1)}%
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{DAYS[o.day_of_week]}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{o.hour_of_day}:00</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${Math.min(100, o.historical_avg_occupancy_pct)}%` }}
+                          />
+                        </div>
+                        <span className="text-[12px] font-semibold text-primary">
+                          {o.historical_avg_occupancy_pct.toFixed(1)}%
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-500">{o.next_occurrence ?? "—"}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{o.next_occurrence ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -225,38 +238,37 @@ export default async function IntelligencePage() {
       {/* Demand Heatmap */}
       {heatmapCells.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-zinc-700 mb-3 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-blue-500" /> Demand Heatmap (top routes, last 90 days)
-          </h2>
-          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 border-b border-zinc-200">
-                <tr>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Route</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Day</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Hour</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Trips</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-zinc-500">Avg Occupancy</th>
+          <SectionHead icon={<BarChart3 className="h-4 w-4 text-blue-500" />} title="Demand Heatmap — last 90 days" />
+          <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-muted/30">
+                  {["Route", "Day", "Hour", "Trips", "Avg Occupancy"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-border">
                 {heatmapCells.slice(0, 20).map((c, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-2 text-xs font-medium text-zinc-800">
+                  <tr key={i} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 text-[13px] font-semibold text-foreground">
                       {c.departure_station_name} → {c.destination_station_name}
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{DAYS[c.day_of_week]}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{c.hour_of_day}:00</td>
-                    <td className="px-4 py-2 text-xs text-zinc-600">{c.trip_count}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{DAYS[c.day_of_week]}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{c.hour_of_day}:00</td>
+                    <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{c.trip_count}</td>
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                        <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-blue-500"
-                            style={{ width: `${Math.min(100, c.avg_occupancy_pct)}%` }}
+                            className="h-full rounded-full bg-primary"
+                            style={{
+                              width: `${Math.min(100, c.avg_occupancy_pct)}%`,
+                              opacity: 0.4 + 0.6 * (c.avg_occupancy_pct / 100),
+                            }}
                           />
                         </div>
-                        <span className="text-xs font-medium text-zinc-700">
+                        <span className="text-[12px] font-semibold text-foreground">
                           {c.avg_occupancy_pct.toFixed(1)}%
                         </span>
                       </div>
@@ -266,7 +278,7 @@ export default async function IntelligencePage() {
               </tbody>
             </table>
             {heatmapCells.length > 20 && (
-              <p className="px-4 py-2 text-xs text-zinc-400 border-t border-zinc-100">
+              <p className="px-5 py-2.5 text-[12px] text-muted-foreground border-t border-border">
                 Showing top 20 of {heatmapCells.length} route–time slots.
               </p>
             )}
@@ -274,11 +286,13 @@ export default async function IntelligencePage() {
         </section>
       )}
 
-      {heatmapCells.length === 0 && pricingSuggestions.length === 0 && slaRisks.length === 0 && (
-        <div className="rounded-xl border border-zinc-200 bg-white p-12 text-center shadow-sm">
-          <BrainCircuit className="mx-auto h-10 w-10 text-zinc-300 mb-3" />
-          <p className="text-sm font-semibold text-zinc-600">No data yet</p>
-          <p className="text-xs text-zinc-400 mt-1">
+      {!hasData && (
+        <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-12 text-center">
+          <div className="rounded-2xl p-4 bg-primary/10 w-fit mx-auto mb-4">
+            <BrainCircuit className="h-8 w-8 text-primary" />
+          </div>
+          <p className="text-[14px] font-semibold text-foreground/70">No data yet</p>
+          <p className="text-[12px] text-muted-foreground mt-1">
             Intelligence insights appear after trips and parcels have been processed.
           </p>
         </div>
@@ -287,10 +301,33 @@ export default async function IntelligencePage() {
   );
 }
 
-function BrainCircuit({ className }: { className?: string }) {
+function KpiCard({
+  icon,
+  label,
+  value,
+  color,
+  bgColor,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  color: string;
+  bgColor: string;
+}) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-    </svg>
+    <div className="bg-card rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+      <div className={`inline-flex rounded-xl p-2.5 mb-3 ${bgColor}`}>{icon}</div>
+      <div className={`text-[26px] font-bold leading-none mb-1 ${color}`}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function SectionHead({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      {icon}
+      <h2 className="text-[14px] font-bold text-foreground">{title}</h2>
+    </div>
   );
 }

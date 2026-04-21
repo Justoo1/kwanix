@@ -409,11 +409,7 @@ async def list_users(
     if current_user.role == UserRole.super_admin:
         q = select(User).order_by(User.company_id, User.full_name)
     else:
-        q = (
-            select(User)
-            .where(User.company_id == current_user.company_id)
-            .order_by(User.full_name)
-        )
+        q = select(User).where(User.company_id == current_user.company_id).order_by(User.full_name)
     if role is not None:
         q = q.where(User.role == role)
     result = await db.execute(q.limit(limit).offset(offset))

@@ -8,6 +8,7 @@ PATCH  /corporate/{id}                  — update (name, credit_limit, notes, i
 POST   /corporate/{id}/credit-used      — record credit usage (after invoicing)
 """
 
+import contextlib
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,10 +39,8 @@ class CorporateAccountCreate(BaseModel):
 
     def normalize(self) -> "CorporateAccountCreate":
         if self.contact_phone:
-            try:
+            with contextlib.suppress(ValueError):
                 self.contact_phone = normalize_gh_phone(self.contact_phone)
-            except ValueError:
-                pass
         return self
 
 
@@ -140,9 +139,7 @@ async def get_corporate_account(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(require_role(*_ADMIN)),
 ):
-    result = await db.execute(
-        select(CorporateAccount).where(CorporateAccount.id == account_id)
-    )
+    result = await db.execute(select(CorporateAccount).where(CorporateAccount.id == account_id))
     acc = result.scalar_one_or_none()
     if acc is None:
         raise HTTPException(status_code=404, detail="Corporate account not found")
@@ -156,9 +153,7 @@ async def update_corporate_account(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(require_role(*_ADMIN)),
 ):
-    result = await db.execute(
-        select(CorporateAccount).where(CorporateAccount.id == account_id)
-    )
+    result = await db.execute(select(CorporateAccount).where(CorporateAccount.id == account_id))
     acc = result.scalar_one_or_none()
     if acc is None:
         raise HTTPException(status_code=404, detail="Corporate account not found")
@@ -194,9 +189,7 @@ async def record_credit_usage(
     current_user: User = Depends(require_role(*_ADMIN)),
 ):
     """Record credit usage (e.g. after issuing a monthly invoice)."""
-    result = await db.execute(
-        select(CorporateAccount).where(CorporateAccount.id == account_id)
-    )
+    result = await db.execute(select(CorporateAccount).where(CorporateAccount.id == account_id))
     acc = result.scalar_one_or_none()
     if acc is None:
         raise HTTPException(status_code=404, detail="Corporate account not found")

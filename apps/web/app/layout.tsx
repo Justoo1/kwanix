@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { DM_Sans, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -7,10 +7,11 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { NetworkProvider } from "@/components/providers/network-provider";
 import { PwaRegister } from "@/components/pwa-register";
 
-const inter = Inter({
-  variable: "--font-inter",
+const dmSans = DM_Sans({
+  variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const geistMono = Geist_Mono({
@@ -32,7 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${dmSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         <NetworkProvider>

@@ -9,15 +9,14 @@ from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_db_for_user, require_role
 from app.models.company import Company
 from app.models.parcel import Parcel, ParcelStatus
-from app.models.station import Station
-from app.models.ticket import Ticket, TicketStatus
+from app.models.ticket import TicketStatus
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
 
@@ -34,8 +33,8 @@ class HeatmapCell(BaseModel):
     departure_station_name: str
     destination_station_id: int
     destination_station_name: str
-    day_of_week: int        # 0=Monday … 6=Sunday
-    hour_of_day: int        # 0–23
+    day_of_week: int  # 0=Monday … 6=Sunday
+    hour_of_day: int  # 0–23
     trip_count: int
     avg_occupancy_pct: float
 
@@ -53,7 +52,7 @@ class ForecastResponse(BaseModel):
     sample_trips: int
     predicted_occupancy_pct: float
     occupancy_std: float
-    confidence: str   # "high" | "medium" | "low"
+    confidence: str  # "high" | "medium" | "low"
     similar_trips: list[dict]
 
 
@@ -79,7 +78,7 @@ class SlaRisk(BaseModel):
     destination_station_name: str
     created_at: datetime
     hours_remaining: float
-    severity: str   # "critical" | "warning" | "watch"
+    severity: str  # "critical" | "warning" | "watch"
 
 
 class Opportunity(BaseModel):
@@ -151,6 +150,7 @@ async def get_demand_heatmap(
 
     # Aggregate into (route, dow, hour) buckets
     from collections import defaultdict  # noqa: PLC0415
+
     buckets: dict[tuple, list[float]] = defaultdict(list)
     station_names: dict[int, str] = {}
 
@@ -229,11 +229,13 @@ async def get_occupancy_forecast(
         sold = sum(1 for t in trip.tickets if t.status != TicketStatus.cancelled)
         occ = round((sold / trip.vehicle.capacity) * 100, 1)
         occupancies.append(occ)
-        similar.append({
-            "trip_id": trip.id,
-            "departure_time": trip.departure_time.isoformat(),
-            "occupancy_pct": occ,
-        })
+        similar.append(
+            {
+                "trip_id": trip.id,
+                "departure_time": trip.departure_time.isoformat(),
+                "occupancy_pct": occ,
+            }
+        )
 
     predicted = round(statistics.mean(occupancies), 1) if occupancies else 0.0
     std = round(statistics.stdev(occupancies), 1) if len(occupancies) >= 2 else 0.0
@@ -306,8 +308,12 @@ async def get_pricing_suggestions(
         suggestions.append(
             PricingSuggestion(
                 trip_id=trip.id,
-                departure_station_name=trip.departure_station.name if trip.departure_station else "",
-                destination_station_name=trip.destination_station.name if trip.destination_station else "",
+                departure_station_name=(
+                    trip.departure_station.name if trip.departure_station else ""
+                ),
+                destination_station_name=(
+                    trip.destination_station.name if trip.destination_station else ""
+                ),
                 departure_time=trip.departure_time,
                 current_price_ghs=base_price,
                 seats_available=seats_available,
@@ -335,15 +341,9 @@ async def get_sla_risk(
 
     # Load company SLA — super_admin sees all, but without RLS company_id is unset;
     # for simplicity we fall back to 2 days when company is unavailable.
-    company_result = await db.execute(
-        select(Company).where(Company.id == current_user.company_id)
-    )
+    company_result = await db.execute(select(Company).where(Company.id == current_user.company_id))
     company = company_result.scalar_one_or_none()
     sla_days = company.sla_threshold_days if company else 2
-
-    # Parcels that are pending/in_transit and approaching the SLA window
-    sla_deadline_start = now + timedelta(hours=0)
-    sla_window_end = now + timedelta(hours=24)
 
     # Find parcels whose created_at + sla_days falls within the next 24 hours
     sla_cutoff_min = now - timedelta(days=sla_days) + timedelta(hours=0)
@@ -387,7 +387,9 @@ async def get_sla_risk(
                 sender_name=parcel.sender_name,
                 receiver_name=parcel.receiver_name,
                 origin_station_name=parcel.origin_station.name if parcel.origin_station else "",
-                destination_station_name=parcel.destination_station.name if parcel.destination_station else "",
+                destination_station_name=(
+                    parcel.destination_station.name if parcel.destination_station else ""
+                ),
                 created_at=parcel.created_at,
                 hours_remaining=round(hours_remaining, 1),
                 severity=severity,
@@ -431,6 +433,7 @@ async def get_opportunities(
     hist_trips = hist_result.scalars().all()
 
     from collections import defaultdict  # noqa: PLC0415
+
     buckets: dict[tuple, list[float]] = defaultdict(list)
     station_names: dict[int, str] = {}
 
@@ -451,8 +454,7 @@ async def get_opportunities(
 
     # Scheduled trips in the next 14 days
     future_result = await db.execute(
-        select(Trip)
-        .where(
+        select(Trip).where(
             Trip.departure_time.between(now, look_ahead),
             Trip.status != TripStatus.cancelled,
         )

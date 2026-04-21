@@ -498,10 +498,7 @@ class TestInitializeTransactionPayload:
                 cancel_action="https://kwanix.com/payment/cancelled",
             )
 
-        assert (
-            captured["payload"].get("cancel_action")
-            == "https://kwanix.com/payment/cancelled"
-        )
+        assert captured["payload"].get("cancel_action") == "https://kwanix.com/payment/cancelled"
 
     @pytest.mark.asyncio
     async def test_cancel_action_omitted_when_not_provided(self):

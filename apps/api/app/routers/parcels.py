@@ -285,12 +285,14 @@ async def initiate_parcel_momo_payment(
     The platform fee (if in per_transaction mode) is automatically split
     to the Kwanix account via Paystack subaccount.
     """
+    from uuid import uuid4  # noqa: PLC0415
+
+    from sqlalchemy import update  # noqa: PLC0415
+
     from app.integrations.paystack import charge_mobile_money  # noqa: PLC0415
     from app.models.transaction_fee import TransactionFee  # noqa: PLC0415
     from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
     from app.utils.phone import detect_momo_provider, normalize_gh_phone  # noqa: PLC0415
-    from sqlalchemy import update  # noqa: PLC0415
-    from uuid import uuid4  # noqa: PLC0415
 
     result = await db.execute(
         select(Parcel)
@@ -305,7 +307,10 @@ async def initiate_parcel_momo_payment(
     if parcel.fee_payment_status == "momo_pending":
         raise HTTPException(
             status_code=400,
-            detail="A MoMo payment is already pending for this parcel. Wait for the customer to approve or retry.",
+            detail=(
+                "A MoMo payment is already pending for this parcel."
+                " Wait for the customer to approve or retry."
+            ),
         )
     if float(parcel.fee_ghs) <= 0:
         raise HTTPException(status_code=400, detail="This parcel has no shipping fee to collect")
@@ -362,7 +367,9 @@ async def initiate_parcel_momo_payment(
     await db.commit()
 
     gateway_status = data.get("status", "pending")
-    display_text = data.get("display_text") or "Ask the sender to approve the prompt on their phone."
+    display_text = (
+        data.get("display_text") or "Ask the sender to approve the prompt on their phone."
+    )
 
     return InitiateMomoPaymentResponse(
         reference=reference,

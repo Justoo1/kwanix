@@ -248,12 +248,14 @@ async def list_public_trips(
     q = (
         select(Trip)
         .where(
-            Trip.status.in_([
-                TripStatus.scheduled,
-                TripStatus.loading,
-                TripStatus.departed,
-                TripStatus.arrived,
-            ]),
+            Trip.status.in_(
+                [
+                    TripStatus.scheduled,
+                    TripStatus.loading,
+                    TripStatus.departed,
+                    TripStatus.arrived,
+                ]
+            ),
         )
         .options(
             selectinload(Trip.vehicle),
@@ -285,6 +287,7 @@ async def list_public_trips(
     else:
         # Default: show today's trips and all future trips
         from datetime import date as date_type
+
         q = q.where(func.date(Trip.departure_time) >= date_type.today())
     if company_code is not None:
         company_sub = (

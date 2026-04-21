@@ -34,7 +34,6 @@ Covers:
     - SMS not sent again if eta_sms_sent_at already set
 """
 
-import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -48,7 +47,6 @@ from app.models.trip import Trip, TripStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.routers.driver import _check_eta_proximity_sms, _haversine_km
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -225,8 +223,7 @@ class TestGetTripPosition:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.loading
+            db, company, vehicle, station_accra, station_prestea, status=TripStatus.loading
         )
         resp = await client.get(f"/api/v1/livetrack/trip/{trip.id}")
         assert resp.status_code == 200
@@ -390,8 +387,7 @@ class TestDeadVehicles:
         await db.flush()
 
         await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.scheduled
+            db, company, vehicle, station_accra, station_prestea, status=TripStatus.scheduled
         )
         resp = await client.get(
             "/api/v1/livetrack/dead-vehicles", headers=_auth(company_admin_token)
@@ -416,8 +412,13 @@ class TestBroadcastToggle:
         driver_token: str,
     ):
         await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.loading, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.loading,
+            driver_id=driver_user.id,
         )
         resp = await client.post(
             "/api/v1/driver/broadcast",
@@ -442,8 +443,13 @@ class TestBroadcastToggle:
         driver_token: str,
     ):
         await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.loading, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.loading,
+            driver_id=driver_user.id,
         )
         resp = await client.post(
             "/api/v1/driver/broadcast",
@@ -499,8 +505,13 @@ class TestShareLink:
         await db.flush()
 
         await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         resp = await client.post(
             "/api/v1/driver/share-link",
@@ -523,8 +534,13 @@ class TestShareLink:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         await _make_ticket(db, company, trip, phone="233541000001", seat=1)
         await _make_ticket(db, company, trip, phone="233541000002", seat=2)
@@ -552,8 +568,13 @@ class TestShareLink:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         await _make_ticket(db, company, trip, phone="233541000001", seat=1)
         # Add cancelled ticket
@@ -598,8 +619,13 @@ class TestProximitySms:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         ticket = await _make_ticket(db, company, trip, phone="233541000001")
 
@@ -624,8 +650,13 @@ class TestProximitySms:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         ticket = await _make_ticket(db, company, trip, phone="233541000002")
 
@@ -650,8 +681,13 @@ class TestProximitySms:
         await db.flush()
 
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.departed, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.departed,
+            driver_id=driver_user.id,
         )
         ticket = await _make_ticket(db, company, trip, phone="233541000003")
 
@@ -692,12 +728,19 @@ class TestLocationUpdate:
         # Patch the background task so it doesn't attempt a real Postgres connection
         async def _noop(*args, **kwargs):
             pass
+
         import app.routers.driver as driver_module
+
         monkeypatch.setattr(driver_module, "_check_eta_proximity_sms", _noop)
 
         await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.loading, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.loading,
+            driver_id=driver_user.id,
         )
         resp = await client.post(
             "/api/v1/driver/location",
@@ -715,7 +758,9 @@ class TestLocationUpdate:
     ):
         async def _noop(*args, **kwargs):
             pass
+
         import app.routers.driver as driver_module
+
         monkeypatch.setattr(driver_module, "_check_eta_proximity_sms", _noop)
 
         resp = await client.post(

@@ -60,6 +60,7 @@ async def get_platform_config(db: AsyncSession) -> PlatformConfig:
 
 # ── Fire-and-forget fee recording ─────────────────────────────────────────────
 
+
 async def _record_fee_task(
     company_id: int,
     fee_type: str,
@@ -109,6 +110,7 @@ def schedule_fee_record(
 
 
 # ── Daily sweeper ──────────────────────────────────────────────────────────────
+
 
 def _make_reference(company_id: int) -> str:
     alphabet = string.ascii_uppercase + string.digits
@@ -226,7 +228,9 @@ async def run_transaction_fee_sweeper(get_session_fn) -> None:  # type: ignore[t
             async with get_session_fn() as db:
                 config = await get_platform_config(db)
                 if config.billing_mode != "per_transaction":
-                    logger.info("transaction_fee_sweeper.skipped", reason="not in per_transaction mode")
+                    logger.info(
+                        "transaction_fee_sweeper.skipped", reason="not in per_transaction mode"
+                    )
                     continue
 
                 today = date.today()

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -19,8 +19,8 @@ router = APIRouter()
 
 _ACTIVE_STATUSES = (TripStatus.scheduled, TripStatus.loading, TripStatus.departed)
 _SCAN_STATUSES = (TripStatus.loading, TripStatus.departed)
-_ETA_PROXIMITY_KM = 30.0       # trigger SMS when bus is within this distance
-_GPS_AVG_SPEED_KMH = 80.0      # used for ETA estimation
+_ETA_PROXIMITY_KM = 30.0  # trigger SMS when bus is within this distance
+_GPS_AVG_SPEED_KMH = 80.0  # used for ETA estimation
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -178,10 +178,9 @@ async def _do_proximity_check(
     now = datetime.now(UTC)
 
     tickets_to_notify = [
-        t for t in trip.tickets
-        if t.status != TicketStatus.cancelled
-        and t.eta_sms_sent_at is None
-        and t.passenger_phone
+        t
+        for t in trip.tickets
+        if t.status != TicketStatus.cancelled and t.eta_sms_sent_at is None and t.passenger_phone
     ]
     if not tickets_to_notify:
         return
@@ -208,9 +207,7 @@ async def get_my_trip(
     if trip is None:
         raise HTTPException(status_code=404, detail="No active trip assigned to this driver.")
 
-    non_cancelled = sum(
-        1 for t in trip.tickets if t.status != TicketStatus.cancelled
-    )
+    non_cancelled = sum(1 for t in trip.tickets if t.status != TicketStatus.cancelled)
     return DriverTripResponse(
         id=trip.id,
         departure_station_name=trip.departure_station.name if trip.departure_station else "",
@@ -219,7 +216,9 @@ async def get_my_trip(
         status=trip.status.value,
         vehicle_plate=trip.vehicle.plate_number if trip.vehicle else "",
         passenger_count=non_cancelled,
-        location_broadcast_enabled=trip.vehicle.location_broadcast_enabled if trip.vehicle else False,
+        location_broadcast_enabled=(
+            trip.vehicle.location_broadcast_enabled if trip.vehicle else False
+        ),
     )
 
 
@@ -422,10 +421,7 @@ async def share_tracking_link(
     url = f"{settings.public_app_url}/track/bus/{trip.id}"
     message = arkesel.msg_live_tracking_link(dep, dst, url)
 
-    tickets = [
-        t for t in trip.tickets
-        if t.status != TicketStatus.cancelled and t.passenger_phone
-    ]
+    tickets = [t for t in trip.tickets if t.status != TicketStatus.cancelled and t.passenger_phone]
 
     for ticket in tickets:
         background_tasks.add_task(

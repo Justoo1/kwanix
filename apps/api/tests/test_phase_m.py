@@ -393,9 +393,7 @@ class TestAIInsightEndpoint:
     ):
         """503 is returned when no Gemini API key is set."""
         monkeypatch.setattr(settings, "gemini_api_key", None)
-        response = await client.get(
-            f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight")
         assert response.status_code == 503
 
     @pytest.mark.asyncio
@@ -408,9 +406,7 @@ class TestAIInsightEndpoint:
         """Fallback message for pending parcel mentions origin and destination."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight")
         assert response.status_code == 200
         body = response.json()
         assert "message" in body
@@ -428,9 +424,7 @@ class TestAIInsightEndpoint:
         """Fallback message for in_transit parcel mentions route information."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_in_transit.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_in_transit.tracking_number}/ai-insight")
         assert response.status_code == 200
         body = response.json()
         assert "in transit" in body["message"].lower()
@@ -445,9 +439,7 @@ class TestAIInsightEndpoint:
         """Fallback message for arrived parcel mentions OTP collection."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_arrived.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_arrived.tracking_number}/ai-insight")
         assert response.status_code == 200
         body = response.json()
         assert "arrived" in body["message"].lower() or "collection" in body["message"].lower()
@@ -464,9 +456,7 @@ class TestAIInsightEndpoint:
         """Fallback message for returned parcel includes the return reason."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_returned.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_returned.tracking_number}/ai-insight")
         assert response.status_code == 200
         body = response.json()
         assert "Recipient not found" in body["message"]
@@ -481,9 +471,7 @@ class TestAIInsightEndpoint:
         """ETA field is populated for in_transit parcels with a departure time."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_in_transit.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_in_transit.tracking_number}/ai-insight")
         assert response.status_code == 200
         body = response.json()
         assert body["eta"] is not None
@@ -499,9 +487,7 @@ class TestAIInsightEndpoint:
         """ETA is null for pending parcels (not yet assigned to a trip)."""
         monkeypatch.setattr(settings, "gemini_api_key", "test-key-that-will-fail")
 
-        response = await client.get(
-            f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight"
-        )
+        response = await client.get(f"/api/v1/track/{parcel_pending.tracking_number}/ai-insight")
         assert response.status_code == 200
         assert response.json()["eta"] is None
 
@@ -910,9 +896,7 @@ class TestStationCoordinates:
         response = await client.get("/api/v1/stations", headers=_auth(manager_token))
         assert response.status_code == 200
         stations = response.json()
-        match = next(
-            (s for s in stations if s["id"] == station_with_coords.id), None
-        )
+        match = next((s for s in stations if s["id"] == station_with_coords.id), None)
         assert match is not None
         assert match["latitude"] == pytest.approx(5.603717, abs=1e-4)
         assert match["longitude"] == pytest.approx(-0.186964, abs=1e-4)

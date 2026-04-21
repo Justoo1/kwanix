@@ -111,9 +111,7 @@ class TripResponse(BaseModel):
             result["vehicle_model"] = data.vehicle.model
             result["vehicle_default_driver_id"] = data.vehicle.default_driver_id
             result["vehicle_default_driver_name"] = (
-                data.vehicle.default_driver.full_name
-                if data.vehicle.default_driver
-                else None
+                data.vehicle.default_driver.full_name if data.vehicle.default_driver else None
             )
         except Exception as exc:
             logger.debug("vehicle not loaded on trip", trip_id=data.id, error=str(exc))
@@ -225,12 +223,14 @@ async def create_trip(
     await db.flush()
 
     for i, stop_input in enumerate(body.stops, start=1):
-        db.add(TripStop(
-            trip_id=trip.id,
-            station_id=stop_input.station_id,
-            sequence_order=i,
-            eta=stop_input.eta,
-        ))
+        db.add(
+            TripStop(
+                trip_id=trip.id,
+                station_id=stop_input.station_id,
+                sequence_order=i,
+                eta=stop_input.eta,
+            )
+        )
 
     await db.commit()
 
@@ -297,12 +297,14 @@ async def generate_schedule(
         db.add(trip)
         await db.flush()
         for seq, stop_input in enumerate(body.stops, start=1):
-            db.add(TripStop(
-                trip_id=trip.id,
-                station_id=stop_input.station_id,
-                sequence_order=seq,
-                eta=stop_input.eta,
-            ))
+            db.add(
+                TripStop(
+                    trip_id=trip.id,
+                    station_id=stop_input.station_id,
+                    sequence_order=seq,
+                    eta=stop_input.eta,
+                )
+            )
         trip_ids.append(trip.id)
 
     await db.commit()
@@ -483,7 +485,9 @@ async def update_trip_status(
         from_name = (
             updated_trip.departure_station.name if updated_trip.departure_station else "origin"
         )
-        dep_time = updated_trip.departure_time.strftime("%I:%M %p") if updated_trip.departure_time else ""
+        dep_time = (
+            updated_trip.departure_time.strftime("%I:%M %p") if updated_trip.departure_time else ""
+        )
         sms_msg = msg_trip_loading(plate, from_name, dep_time)
         background_tasks.add_task(_sms_passengers, updated_trip, sms_msg)
 
@@ -651,7 +655,9 @@ async def delete_trip_stop(
     trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = trip_result.scalar_one_or_none()
     if trip and trip.status != TripStatus.scheduled:
-        raise HTTPException(status_code=400, detail="Stops can only be removed from scheduled trips.")
+        raise HTTPException(
+            status_code=400, detail="Stops can only be removed from scheduled trips."
+        )
 
     await db.delete(stop)
     await db.commit()

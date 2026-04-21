@@ -17,13 +17,12 @@ from app.integrations import arkesel
 from app.models.sms_log import SmsLog
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
-from app.models.vehicle import Vehicle
 
 logger = structlog.get_logger()
 
-_SWEEP_INTERVAL_SECONDS = 600   # 10 minutes
+_SWEEP_INTERVAL_SECONDS = 600  # 10 minutes
 _DEAD_THRESHOLD_MINUTES = 15
-_ALERT_COOLDOWN_MINUTES = 60    # don't re-alert for the same trip within 1 hour
+_ALERT_COOLDOWN_MINUTES = 60  # don't re-alert for the same trip within 1 hour
 
 
 async def run_dead_vehicle_sweeper(session_factory: async_sessionmaker) -> None:
@@ -70,11 +69,7 @@ async def _sweep_once(session_factory: async_sessionmaker) -> None:
                 continue  # GPS is fresh — no alert needed
 
             # Determine how long it's been silent
-            if v.last_gps_update is None:
-                # Never updated — use trip updated_at as proxy
-                silent_since = trip.updated_at
-            else:
-                silent_since = v.last_gps_update
+            silent_since = trip.updated_at if v.last_gps_update is None else v.last_gps_update
 
             # Check cooldown: has an alert been sent for this trip in the last hour?
             log_result = await db.execute(
@@ -114,8 +109,10 @@ async def _sweep_once(session_factory: async_sessionmaker) -> None:
 
             result = await arkesel.send_sms(admin.phone, message, "dead_vehicle_alert")
             raw_status = result.get("status", "failed")
-            log_status = "success" if raw_status == "success" else (
-                "skipped" if raw_status == "skipped" else "failed"
+            log_status = (
+                "success"
+                if raw_status == "success"
+                else ("skipped" if raw_status == "skipped" else "failed")
             )
 
             # Log using parcel_id column as a repurposed trip reference for cooldown check

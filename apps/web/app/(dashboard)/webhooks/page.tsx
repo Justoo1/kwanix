@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, Webhook } from "lucide-react";
 import { clientFetch } from "@/lib/client-api";
 
 interface WebhookEvent {
@@ -49,83 +49,87 @@ export default function WebhooksPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900">Failed Webhooks</h1>
-          <p className="text-sm text-zinc-500 mt-1">
+          <h1 className="text-[22px] font-bold text-foreground">Failed Webhooks</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
             Paystack events that exhausted all retry attempts. Reset them to re-queue.
           </p>
         </div>
         <button
           onClick={load}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-[12px] font-semibold text-muted-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
         >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-100">
-          <h2 className="text-base font-medium text-zinc-800">
-            Dead-letter queue
-            <span className="ml-2 text-sm font-normal text-zinc-400">({events.length})</span>
-          </h2>
+      <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+          <h2 className="text-[14px] font-bold text-foreground">Dead-letter Queue</h2>
+          <span className="text-[12px] text-muted-foreground">{events.length} events</span>
         </div>
 
         {loading ? (
-          <p className="px-6 py-8 text-sm text-zinc-400 text-center">Loading…</p>
+          <p className="px-5 py-10 text-[13px] text-muted-foreground text-center">Loading…</p>
         ) : events.length === 0 ? (
-          <p className="px-6 py-8 text-sm text-zinc-400 text-center">
-            No failed webhook events. All good!
-          </p>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="rounded-2xl p-4 bg-primary/10 mb-4">
+              <Webhook className="h-8 w-8 text-primary" />
+            </div>
+            <p className="text-[14px] font-semibold text-foreground/70">No failed webhook events</p>
+            <p className="text-[12px] text-muted-foreground mt-1">All Paystack events processed successfully.</p>
+          </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">ID</th>
-                <th className="px-6 py-3 text-left font-medium">Event type</th>
-                <th className="px-6 py-3 text-left font-medium">Attempts</th>
-                <th className="px-6 py-3 text-left font-medium">Last error</th>
-                <th className="px-6 py-3 text-left font-medium">Created</th>
-                <th className="px-6 py-3 text-left font-medium"></th>
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                {["ID", "Event Type", "Attempts", "Last Error", "Created", ""].map((h) => (
+                  <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-border">
               {events.map((ev) => (
-                <tr key={ev.id} className="hover:bg-zinc-50">
-                  <td className="px-6 py-4 font-mono text-zinc-500 text-xs">{ev.id}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                <tr key={ev.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-5 py-3.5 font-mono text-[12px] text-muted-foreground">{ev.id}</td>
+                  <td className="px-5 py-3.5">
+                    <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                       {ev.event_type}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-zinc-600">{ev.attempts}</td>
-                  <td className="px-6 py-4 text-zinc-500 max-w-xs truncate" title={ev.last_error ?? ""}>
+                  <td className="px-5 py-3.5">
+                    <span className={`text-[13px] font-bold ${ev.attempts >= 3 ? "text-red-600" : "text-muted-foreground"}`}>
+                      {ev.attempts}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-[12px] text-muted-foreground max-w-xs truncate" title={ev.last_error ?? ""}>
                     {ev.last_error ? ev.last_error.slice(0, 80) + (ev.last_error.length > 80 ? "…" : "") : "—"}
                   </td>
-                  <td className="px-6 py-4 text-zinc-500 whitespace-nowrap">
+                  <td className="px-5 py-3.5 text-[12px] text-muted-foreground whitespace-nowrap">
                     {new Date(ev.created_at).toLocaleString("en-GH", {
                       dateStyle: "medium",
                       timeStyle: "short",
                     })}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-5 py-3.5">
                     <button
                       onClick={() => handleRetry(ev.id)}
                       disabled={retrying === ev.id}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 transition-colors"
+                      className="text-[12px] font-semibold text-primary hover:opacity-70 disabled:opacity-40 transition-opacity"
                     >
-                      {retrying === ev.id ? "Resetting…" : "Retry"}
+                      {retrying === ev.id ? "Resetting…" : "Retry →"}
                     </button>
                   </td>
                 </tr>

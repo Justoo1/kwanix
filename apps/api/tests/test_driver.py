@@ -279,9 +279,7 @@ class TestAssignDriverToTrip:
 
 class TestDriverGetTrip:
     @pytest.mark.asyncio
-    async def test_no_assignment_returns_404(
-        self, client: AsyncClient, driver_token: str
-    ):
+    async def test_no_assignment_returns_404(self, client: AsyncClient, driver_token: str):
         response = await client.get(
             "/api/v1/driver/trip",
             headers=_auth(driver_token),
@@ -315,9 +313,7 @@ class TestDriverGetTrip:
         assert body["status"] == "loading"
 
     @pytest.mark.asyncio
-    async def test_non_driver_cannot_access(
-        self, client: AsyncClient, clerk_token: str
-    ):
+    async def test_non_driver_cannot_access(self, client: AsyncClient, clerk_token: str):
         response = await client.get(
             "/api/v1/driver/trip",
             headers=_auth(clerk_token),
@@ -359,9 +355,7 @@ class TestDriverGetPassengers:
         assert seat_numbers == {t1.seat_number, t2.seat_number}
 
     @pytest.mark.asyncio
-    async def test_no_trip_returns_404(
-        self, client: AsyncClient, driver_token: str
-    ):
+    async def test_no_trip_returns_404(self, client: AsyncClient, driver_token: str):
         response = await client.get(
             "/api/v1/driver/trip/passengers",
             headers=_auth(driver_token),
@@ -536,8 +530,13 @@ class TestDriverScan:
     ):
         """Driver with only a 'scheduled' trip cannot scan — trip must be loading/departed."""
         trip = await _make_trip(
-            db, company, vehicle, station_accra, station_prestea,
-            status=TripStatus.scheduled, driver_id=driver_user.id
+            db,
+            company,
+            vehicle,
+            station_accra,
+            station_prestea,
+            status=TripStatus.scheduled,
+            driver_id=driver_user.id,
         )
         ticket = await _make_ticket(db, company, trip, seat=1)
 

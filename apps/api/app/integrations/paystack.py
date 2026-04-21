@@ -317,7 +317,11 @@ async def charge_mobile_money(
     """
     if not settings.paystack_secret_key:
         logger.warning("paystack.charge_momo.skipped", reason="API key not configured")
-        return {"status": "pending", "display_text": "Test mode — no real charge", "reference": reference}
+        return {
+            "status": "pending",
+            "display_text": "Test mode — no real charge",
+            "reference": reference,
+        }
 
     headers = {
         "Authorization": f"Bearer {settings.paystack_secret_key}",

@@ -47,8 +47,6 @@ class LoyaltyTransaction(Base):
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     account: Mapped[LoyaltyAccount] = relationship(back_populates="transactions")

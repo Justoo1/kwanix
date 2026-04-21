@@ -224,8 +224,7 @@ def msg_trip_departed(plate_number: str, from_station: str, eta_str: str | None 
 
 def msg_trip_arrived(destination: str) -> str:
     return (
-        f"Your bus has arrived at {destination}. "
-        "Please proceed to collect your luggage. - Kwanix"
+        f"Your bus has arrived at {destination}. Please proceed to collect your luggage. - Kwanix"
     )
 
 

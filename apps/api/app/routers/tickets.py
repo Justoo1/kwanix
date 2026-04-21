@@ -331,7 +331,9 @@ async def initiate_ticket_momo_payment(
     await db.commit()
 
     gateway_status = data.get("status", "pending")
-    display_text = data.get("display_text") or "Ask the passenger to approve the prompt on their phone."
+    display_text = (
+        data.get("display_text") or "Ask the passenger to approve the prompt on their phone."
+    )
 
     return InitiateMomoResponse(
         reference=reference,
@@ -377,9 +379,7 @@ async def verify_ticket_payment(
         return VerifyPaymentResponse(payment_status="paid", updated=False)
 
     if not ticket.payment_ref:
-        return VerifyPaymentResponse(
-            payment_status=ticket.payment_status.value, updated=False
-        )
+        return VerifyPaymentResponse(payment_status=ticket.payment_status.value, updated=False)
 
     data = await verify_transaction(ticket.payment_ref)
     gateway_status = data.get("status")

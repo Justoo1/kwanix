@@ -23,9 +23,9 @@ from app.integrations.email import send_ticket_email
 from app.integrations.paystack import verify_paystack_signature
 from app.middleware.rate_limit import limiter
 from app.models.company import Company
+from app.models.parcel import Parcel
 from app.models.payment_event import PaymentEvent
 from app.models.subscription import SubscriptionInvoice
-from app.models.parcel import Parcel
 from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip
 from app.models.webhook_event import WebhookEvent
@@ -94,9 +94,7 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
 
     # ── Check if this reference belongs to a parcel MoMo payment ────────────────
     if payment_ref and payment_ref.startswith("KX-PAR-"):
-        parcel_result = await db.execute(
-            select(Parcel).where(Parcel.payment_ref == payment_ref)
-        )
+        parcel_result = await db.execute(select(Parcel).where(Parcel.payment_ref == payment_ref))
         parcel = parcel_result.scalar_one_or_none()
         if parcel:
             if event_type == "charge.success":

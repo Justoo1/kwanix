@@ -8,14 +8,14 @@ GET    /loyalty/account/{phone}/history — transaction history
 GET    /loyalty/leaderboard             — top earners (company_admin+)
 """
 
+import contextlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_db_for_user, require_role
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -25,9 +25,14 @@ from app.utils.phone import normalize_gh_phone
 router = APIRouter()
 
 _ADMIN_ROLES = (UserRole.company_admin, UserRole.super_admin)
-_CLERK_ROLES = (UserRole.station_clerk, UserRole.station_manager, UserRole.company_admin, UserRole.super_admin)
+_CLERK_ROLES = (
+    UserRole.station_clerk,
+    UserRole.station_manager,
+    UserRole.company_admin,
+    UserRole.super_admin,
+)
 
-_POINTS_PER_GHS = 1       # 1 point per GHS 1 spent
+_POINTS_PER_GHS = 1  # 1 point per GHS 1 spent
 _GHS_PER_100_POINTS = 1.0  # 100 points = GHS 1.00
 
 
@@ -82,10 +87,8 @@ async def _get_or_create_account(
     phone: str,
     full_name: str | None = None,
 ) -> LoyaltyAccount:
-    try:
+    with contextlib.suppress(ValueError):
         phone = normalize_gh_phone(phone)
-    except ValueError:
-        pass
 
     result = await db.execute(
         select(LoyaltyAccount).where(
@@ -117,10 +120,8 @@ async def get_loyalty_account(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(require_role(*_CLERK_ROLES)),
 ):
-    try:
+    with contextlib.suppress(ValueError):
         phone = normalize_gh_phone(phone)
-    except ValueError:
-        pass
 
     result = await db.execute(
         select(LoyaltyAccount).where(
@@ -130,7 +131,9 @@ async def get_loyalty_account(
     )
     account = result.scalar_one_or_none()
     if account is None:
-        raise HTTPException(status_code=404, detail="No loyalty account found for this phone number.")
+        raise HTTPException(
+            status_code=404, detail="No loyalty account found for this phone number."
+        )
 
     return LoyaltyAccountResponse(
         id=account.id,
@@ -240,10 +243,8 @@ async def get_loyalty_history(
     db: AsyncSession = Depends(get_db_for_user),
     current_user: User = Depends(require_role(*_CLERK_ROLES)),
 ):
-    try:
+    with contextlib.suppress(ValueError):
         phone = normalize_gh_phone(phone)
-    except ValueError:
-        pass
 
     result = await db.execute(
         select(LoyaltyAccount)
