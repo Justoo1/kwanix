@@ -31,6 +31,7 @@ class Vehicle(Base, TimestampMixin):
     current_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_gps_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    location_broadcast_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="vehicles")  # noqa: F821

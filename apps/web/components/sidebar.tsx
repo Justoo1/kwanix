@@ -19,6 +19,11 @@ import {
   Route,
   Webhook,
   ClipboardList,
+  Map,
+  BrainCircuit,
+  BadgeDollarSign,
+  Star,
+  CreditCard,
 } from "lucide-react";
 
 import { logout } from "@/actions/auth";
@@ -41,6 +46,11 @@ const companyAdminItems = [
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
+  { href: "/fleet", label: "Fleet Map", icon: Map },
+  { href: "/intelligence", label: "Intelligence", icon: BrainCircuit },
+  { href: "/corporate", label: "Corporate", icon: BadgeDollarSign },
+  { href: "/loyalty", label: "Loyalty", icon: Star },
+  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/users", label: "Users", icon: Users },
   { href: "/drivers", label: "Drivers", icon: Bus },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
@@ -55,6 +65,8 @@ const managerItems = [
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/stations", label: "Stations", icon: MapPin },
   { href: "/vehicles", label: "Vehicles", icon: Truck },
+  { href: "/fleet", label: "Fleet Map", icon: Map },
+  { href: "/intelligence", label: "Intelligence", icon: BrainCircuit },
   { href: "/drivers", label: "Drivers", icon: Bus },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

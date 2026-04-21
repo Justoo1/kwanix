@@ -33,6 +33,7 @@ class User(Base, TimestampMixin):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sms_opt_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    whatsapp_opt_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     token_version: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False, server_default="0"
     )

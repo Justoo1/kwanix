@@ -20,6 +20,18 @@ out/
 *.tsbuildinfo
 .eslintcache
 
+# Expo / React Native
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+android/
+ios/
+web-build/
+
 # Environment — never commit real secrets
 .env
 .env.local
@@ -58,6 +70,7 @@ apps/web/src/types/api.generated.ts
 conversation.md
 Deployment Readiness Imple.md
 docs/*.md
+pitch/*.md
 CLAUDE.md
 apps/web/CLAUDE.md
 apps/web/AGENTS.md

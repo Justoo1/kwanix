@@ -109,7 +109,7 @@ async def create_ticket(
     trip = trip_result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
-    if trip.status != TripStatus.loading:
+    if trip.status not in (TripStatus.scheduled, TripStatus.loading):
         raise HTTPException(
             status_code=400,
             detail=f"Trip is not accepting passengers (status: {trip.status.value})",
@@ -211,14 +211,32 @@ async def initiate_payment(
             detail=f"Cannot initiate payment: payment_status is '{ticket.payment_status.value}'",
         )
 
+    # Load company to get subaccount code and billing config
+    company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
+    company = company_result.scalar_one_or_none()
+
     email = body.email or f"{ticket.passenger_phone}@kwanix.app"
     reference = f"KX-{ticket.id}-{uuid4().hex[:8]}"
     amount_pesewas = int(ticket.fare_ghs * 100)
+
+    # Determine platform fee split for per_transaction billing mode
+    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
+
+    platform = await get_platform_config(db)
+    platform_fee_pesewas: int | None = None
+    if (
+        platform.billing_mode == "per_transaction"
+        and company is not None
+        and company.paystack_subaccount_code
+    ):
+        platform_fee_pesewas = int(platform.ticket_fee_ghs * 100)
 
     data = await initialize_transaction(
         amount_kobo=amount_pesewas,
         email=email,
         reference=reference,
+        subaccount=company.paystack_subaccount_code if company else None,
+        transaction_charge=platform_fee_pesewas,
     )
 
     ticket.payment_ref = reference
@@ -227,6 +245,161 @@ async def initiate_payment(
     return InitiatePaymentResponse(
         authorization_url=data["authorization_url"],
         reference=reference,
+    )
+
+
+class InitiateMomoRequest(BaseModel):
+    phone: str | None = None  # override passenger phone; defaults to the ticket's passenger_phone
+
+
+class InitiateMomoResponse(BaseModel):
+    reference: str
+    status: str  # "pending" | "pay_offline" | "success" | "failed"
+    display_text: str  # USSD string or message — show this to the passenger
+
+
+@router.post(
+    "/{ticket_id}/initiate-momo-payment",
+    response_model=InitiateMomoResponse,
+)
+async def initiate_ticket_momo_payment(
+    ticket_id: int,
+    body: InitiateMomoRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """
+    Clerk-initiated MoMo payment for a walk-in counter ticket.
+    The clerk enters the passenger's phone number; a USSD prompt or push
+    notification is sent to the passenger's phone for approval.
+    """
+    from app.integrations.paystack import charge_mobile_money  # noqa: PLC0415
+    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
+    from app.utils.phone import detect_momo_provider, normalize_gh_phone  # noqa: PLC0415
+
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.payment_status != PaymentStatus.pending:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot initiate payment: payment_status is '{ticket.payment_status.value}'",
+        )
+
+    phone = body.phone or ticket.passenger_phone
+    try:
+        provider = detect_momo_provider(phone)
+        phone_normalized = normalize_gh_phone(phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
+    company = company_result.scalar_one_or_none()
+
+    platform = await get_platform_config(db)
+    platform_fee_pesewas: int | None = None
+    if (
+        platform.billing_mode == "per_transaction"
+        and company is not None
+        and company.paystack_subaccount_code
+    ):
+        platform_fee_pesewas = int(platform.ticket_fee_ghs * 100)
+
+    reference = f"KX-{ticket.id}-{uuid4().hex[:8]}"
+    email = f"{phone_normalized}@kwanix.app"
+    amount_pesewas = int(ticket.fare_ghs * 100)
+
+    data = await charge_mobile_money(
+        amount_pesewas=amount_pesewas,
+        email=email,
+        phone=phone,
+        provider=provider,
+        reference=reference,
+        subaccount=company.paystack_subaccount_code if company else None,
+        transaction_charge=platform_fee_pesewas,
+    )
+
+    ticket.payment_ref = reference
+    await db.commit()
+
+    gateway_status = data.get("status", "pending")
+    display_text = data.get("display_text") or "Ask the passenger to approve the prompt on their phone."
+
+    return InitiateMomoResponse(
+        reference=reference,
+        status=gateway_status,
+        display_text=display_text,
+    )
+
+
+class VerifyPaymentResponse(BaseModel):
+    payment_status: str
+    updated: bool
+
+
+@router.post(
+    "/{ticket_id}/verify-payment",
+    response_model=VerifyPaymentResponse,
+)
+async def verify_ticket_payment(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """
+    Check the current payment status of a ticket with Paystack and update
+    the DB if the payment has been confirmed. Called by the clerk after the
+    customer approves the MoMo prompt.
+    """
+    from app.integrations.paystack import verify_transaction  # noqa: PLC0415
+
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.payment_status == PaymentStatus.paid:
+        return VerifyPaymentResponse(payment_status="paid", updated=False)
+
+    if not ticket.payment_ref:
+        return VerifyPaymentResponse(
+            payment_status=ticket.payment_status.value, updated=False
+        )
+
+    data = await verify_transaction(ticket.payment_ref)
+    gateway_status = data.get("status")
+    updated = False
+
+    if gateway_status == "success" and ticket.payment_status != PaymentStatus.paid:
+        ticket.payment_status = PaymentStatus.paid
+        ticket.booking_expires_at = None
+        db.add(ticket)
+        await db.commit()
+        updated = True
+    elif gateway_status == "failed" and ticket.payment_status != PaymentStatus.failed:
+        ticket.payment_status = PaymentStatus.failed
+        db.add(ticket)
+        await db.commit()
+        updated = True
+
+    return VerifyPaymentResponse(
+        payment_status=ticket.payment_status.value,
+        updated=updated,
     )
 
 

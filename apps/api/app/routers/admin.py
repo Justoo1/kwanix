@@ -1425,3 +1425,209 @@ async def override_company_billing(
     db.add(company)
     await db.commit()
     return {"message": "Billing override applied.", "company_id": company_id}
+
+
+# ── Platform config (super_admin only) ────────────────────────────────────────
+
+
+class PlatformConfigResponse(BaseModel):
+    billing_mode: str
+    ticket_fee_ghs: float
+    parcel_fee_ghs: float
+
+
+class PlatformConfigUpdate(BaseModel):
+    billing_mode: str | None = None  # "subscription" | "per_transaction"
+    ticket_fee_ghs: float | None = None
+    parcel_fee_ghs: float | None = None
+
+
+_VALID_BILLING_MODES = {"subscription", "per_transaction"}
+
+
+@router.get(
+    "/platform-config",
+    response_model=PlatformConfigResponse,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_platform_config_endpoint(db: AsyncSession = Depends(get_db)):
+    """Return the current platform-wide billing configuration."""
+    from app.services.transaction_fee_service import get_platform_config
+
+    config = await get_platform_config(db)
+    return PlatformConfigResponse(
+        billing_mode=config.billing_mode,
+        ticket_fee_ghs=float(config.ticket_fee_ghs),
+        parcel_fee_ghs=float(config.parcel_fee_ghs),
+    )
+
+
+@router.patch(
+    "/platform-config",
+    response_model=PlatformConfigResponse,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def update_platform_config(
+    body: PlatformConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update platform billing mode and/or per-transaction fee amounts."""
+    from app.services.transaction_fee_service import (
+        get_platform_config,
+        invalidate_config_cache,
+    )
+
+    if body.billing_mode is not None and body.billing_mode not in _VALID_BILLING_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"billing_mode must be one of: {_VALID_BILLING_MODES}",
+        )
+    if body.ticket_fee_ghs is not None and body.ticket_fee_ghs < 0:
+        raise HTTPException(status_code=400, detail="ticket_fee_ghs must be non-negative")
+    if body.parcel_fee_ghs is not None and body.parcel_fee_ghs < 0:
+        raise HTTPException(status_code=400, detail="parcel_fee_ghs must be non-negative")
+
+    config = await get_platform_config(db)
+    if body.billing_mode is not None:
+        config.billing_mode = body.billing_mode
+    if body.ticket_fee_ghs is not None:
+        config.ticket_fee_ghs = body.ticket_fee_ghs  # type: ignore[assignment]
+    if body.parcel_fee_ghs is not None:
+        config.parcel_fee_ghs = body.parcel_fee_ghs  # type: ignore[assignment]
+    db.add(config)
+    await db.commit()
+    await db.refresh(config)
+
+    # Invalidate in-process cache so next requests pick up the new values
+    invalidate_config_cache()
+
+    return PlatformConfigResponse(
+        billing_mode=config.billing_mode,
+        ticket_fee_ghs=float(config.ticket_fee_ghs),
+        parcel_fee_ghs=float(config.parcel_fee_ghs),
+    )
+
+
+# ── Per-transaction fee summaries (super_admin only) ──────────────────────────
+
+
+class TransactionFeeInvoiceItem(BaseModel):
+    id: int
+    period_date: str
+    amount_ghs: float
+    fee_count: int
+    status: str
+    paid_at: datetime | None
+
+
+class CompanyTransactionFeeSummary(BaseModel):
+    pending_amount_ghs: float
+    pending_count: int
+    total_charged_ghs: float
+    invoices: list[TransactionFeeInvoiceItem]
+
+
+class PlatformFeeRow(BaseModel):
+    company_id: int
+    company_name: str
+    pending_ghs: float
+    charged_ghs: float
+
+
+@router.get(
+    "/companies/{company_id}/transaction-fees",
+    response_model=CompanyTransactionFeeSummary,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_transaction_fees(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: view transaction fee summary for a specific company."""
+    from app.models.transaction_fee import TransactionFee, TransactionInvoice
+
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    if company_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    pending_result = await db.execute(
+        select(
+            func.sum(TransactionFee.amount_ghs).label("total"),
+            func.count().label("cnt"),
+        ).where(
+            TransactionFee.company_id == company_id,
+            TransactionFee.status == "pending",
+        )
+    )
+    pending_row = pending_result.one()
+
+    charged_result = await db.execute(
+        select(func.sum(TransactionFee.amount_ghs)).where(
+            TransactionFee.company_id == company_id,
+            TransactionFee.status == "charged",
+        )
+    )
+    total_charged = charged_result.scalar_one() or 0
+
+    invoices_result = await db.execute(
+        select(TransactionInvoice)
+        .where(TransactionInvoice.company_id == company_id)
+        .order_by(TransactionInvoice.created_at.desc())
+        .limit(50)
+    )
+    invoices = invoices_result.scalars().all()
+
+    return CompanyTransactionFeeSummary(
+        pending_amount_ghs=float(pending_row.total or 0),
+        pending_count=int(pending_row.cnt or 0),
+        total_charged_ghs=float(total_charged),
+        invoices=[
+            TransactionFeeInvoiceItem(
+                id=inv.id,
+                period_date=str(inv.period_date),
+                amount_ghs=float(inv.amount_ghs),
+                fee_count=inv.fee_count,
+                status=inv.status,
+                paid_at=inv.paid_at,
+            )
+            for inv in invoices
+        ],
+    )
+
+
+@router.get(
+    "/transaction-fees/summary",
+    response_model=list[PlatformFeeRow],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_platform_transaction_fee_summary(db: AsyncSession = Depends(get_db)):
+    """super_admin: platform-wide pending and charged fee totals grouped by company."""
+    from sqlalchemy import case
+
+    from app.models.transaction_fee import TransactionFee
+
+    rows = await db.execute(
+        select(
+            TransactionFee.company_id,
+            Company.name.label("company_name"),
+            func.sum(
+                case((TransactionFee.status == "pending", TransactionFee.amount_ghs), else_=0)
+            ).label("pending_ghs"),
+            func.sum(
+                case((TransactionFee.status == "charged", TransactionFee.amount_ghs), else_=0)
+            ).label("charged_ghs"),
+        )
+        .join(Company, Company.id == TransactionFee.company_id)
+        .group_by(TransactionFee.company_id, Company.name)
+        .order_by(Company.name)
+    )
+
+    return [
+        PlatformFeeRow(
+            company_id=row.company_id,
+            company_name=row.company_name,
+            pending_ghs=float(row.pending_ghs or 0),
+            charged_ghs=float(row.charged_ghs or 0),
+        )
+        for row in rows.all()
+    ]

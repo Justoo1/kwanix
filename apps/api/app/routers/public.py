@@ -57,6 +57,7 @@ class PublicTripResponse(BaseModel):
     company_code: str
     brand_color: str | None
     booking_open: bool
+    status: str
 
 
 class SeatMapResponse(BaseModel):
@@ -236,19 +237,23 @@ async def list_public_trips(
     request: Request,
     from_station_id: int | None = None,
     to_station_id: int | None = None,
-    date: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     company_code: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_public),
 ):
-    """Return trips open for online booking."""
+    """Return all non-cancelled trips (bookable and historical) for public display."""
     q = (
         select(Trip)
         .where(
-            Trip.booking_open.is_(True),
-            Trip.status.in_([TripStatus.scheduled, TripStatus.loading]),
-            Trip.departure_time > func.now(),
+            Trip.status.in_([
+                TripStatus.scheduled,
+                TripStatus.loading,
+                TripStatus.departed,
+                TripStatus.arrived,
+            ]),
         )
         .options(
             selectinload(Trip.vehicle),
@@ -263,16 +268,24 @@ async def list_public_trips(
         q = q.where(Trip.departure_station_id == from_station_id)
     if to_station_id is not None:
         q = q.where(Trip.destination_station_id == to_station_id)
-    if date is not None:
+    if date_from is not None or date_to is not None:
         try:
             from datetime import date as date_type
 
-            day = date_type.fromisoformat(date)
+            if date_from:
+                day_from = date_type.fromisoformat(date_from)
+                q = q.where(func.date(Trip.departure_time) >= day_from)
+            if date_to:
+                day_to = date_type.fromisoformat(date_to)
+                q = q.where(func.date(Trip.departure_time) <= day_to)
         except ValueError as err:
             raise HTTPException(
                 status_code=400, detail="Invalid date format, use YYYY-MM-DD"
             ) from err
-        q = q.where(func.date(Trip.departure_time) == day)
+    else:
+        # Default: show today's trips and all future trips
+        from datetime import date as date_type
+        q = q.where(func.date(Trip.departure_time) >= date_type.today())
     if company_code is not None:
         company_sub = (
             select(Company.id)
@@ -313,6 +326,7 @@ async def list_public_trips(
                 company_code=trip.company.company_code,
                 brand_color=trip.company.brand_color,
                 booking_open=trip.booking_open,
+                status=trip.status.value,
             )
         )
     return output
@@ -367,6 +381,7 @@ async def get_public_trip(
         company_code=trip.company.company_code,
         brand_color=trip.company.brand_color,
         booking_open=trip.booking_open,
+        status=trip.status.value,
     )
 
 

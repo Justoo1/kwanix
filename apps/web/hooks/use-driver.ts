@@ -14,6 +14,7 @@ export interface DriverTripData {
   status: string;
   vehicle_plate: string;
   passenger_count: number;
+  location_broadcast_enabled: boolean;
 }
 
 export interface DriverPassenger {
@@ -72,9 +73,22 @@ export function useDriverScan() {
       }),
     onSuccess: (result) => {
       if (result.valid) {
-        // Invalidate passengers list so the manifest reflects the "used" status
         qc.invalidateQueries({ queryKey: ["driver", "passengers"] });
       }
+    },
+  });
+}
+
+export function useDriverCheckin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticketId, tripId, seatNumber }: { ticketId: number; tripId: number; seatNumber: number }) =>
+      clientFetch<DriverScanResult>("driver/scan", {
+        method: "POST",
+        body: JSON.stringify({ payload: `TICKET:${ticketId}:${tripId}:${seatNumber}` }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["driver", "passengers"] });
     },
   });
 }

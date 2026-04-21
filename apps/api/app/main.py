@@ -26,7 +26,11 @@ from app.routers import (
     admin,
     auth,
     billing,
+    corporate,
+    demand_intel,
     driver,
+    livetrack,
+    loyalty,
     parcels,
     public,
     stations,
@@ -37,6 +41,8 @@ from app.routers import (
     webhooks,
 )
 from app.services.billing_service import run_subscription_sweeper, run_webhook_retry_sweeper
+from app.services.livetrack_service import run_dead_vehicle_sweeper
+from app.services.transaction_fee_service import run_transaction_fee_sweeper
 
 logger = structlog.get_logger()
 
@@ -46,13 +52,21 @@ async def lifespan(app: FastAPI):
     logger.info("Kwanix API starting", environment=settings.environment)
     subscription_sweeper = asyncio.create_task(run_subscription_sweeper(SessionLocal))
     webhook_sweeper = asyncio.create_task(run_webhook_retry_sweeper(SessionLocal))
+    fee_sweeper = asyncio.create_task(run_transaction_fee_sweeper(SessionLocal))
+    dead_vehicle_sweeper = asyncio.create_task(run_dead_vehicle_sweeper(SessionLocal))
     yield
     subscription_sweeper.cancel()
     webhook_sweeper.cancel()
+    fee_sweeper.cancel()
+    dead_vehicle_sweeper.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await subscription_sweeper
     with contextlib.suppress(asyncio.CancelledError):
         await webhook_sweeper
+    with contextlib.suppress(asyncio.CancelledError):
+        await fee_sweeper
+    with contextlib.suppress(asyncio.CancelledError):
+        await dead_vehicle_sweeper
     logger.info("Kwanix API shutting down")
 
 
@@ -93,6 +107,10 @@ app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["webh
 app.include_router(billing.router, prefix=f"{API_PREFIX}/billing", tags=["billing"])
 app.include_router(public.router, prefix=f"{API_PREFIX}/public", tags=["public"])
 app.include_router(driver.router, prefix=f"{API_PREFIX}/driver", tags=["driver"])
+app.include_router(livetrack.router, prefix=f"{API_PREFIX}/livetrack", tags=["livetrack"])
+app.include_router(demand_intel.router, prefix=f"{API_PREFIX}/demand-intel", tags=["demand-intel"])
+app.include_router(corporate.router, prefix=f"{API_PREFIX}/corporate", tags=["corporate"])
+app.include_router(loyalty.router, prefix=f"{API_PREFIX}/loyalty", tags=["loyalty"])
 
 
 @app.get("/health", tags=["system"])

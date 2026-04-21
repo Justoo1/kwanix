@@ -18,10 +18,11 @@ const PAYMENT_STYLES: Record<string, string> = {
 const DEFAULT_BRAND = "#18181b";
 
 export default async function TicketsPage() {
-  const [loadingTrips, recentTickets, company] = await Promise.all([
-    apiFetch<TripResponse[]>("/api/v1/trips?status=loading").catch(
-      () => [] as TripResponse[]
-    ),
+  const [[scheduledTrips, loadingTrips], recentTickets, company] = await Promise.all([
+    Promise.all([
+      apiFetch<TripResponse[]>("/api/v1/trips?status=scheduled").catch(() => [] as TripResponse[]),
+      apiFetch<TripResponse[]>("/api/v1/trips?status=loading").catch(() => [] as TripResponse[]),
+    ]),
     apiFetch<TicketResponse[]>("/api/v1/tickets").catch(
       () => [] as TicketResponse[]
     ),
@@ -30,6 +31,7 @@ export default async function TicketsPage() {
     ),
   ]);
 
+  const availableTrips = [...scheduledTrips, ...loadingTrips];
   const brandColor = company?.brand_color || DEFAULT_BRAND;
 
   return (
@@ -40,15 +42,14 @@ export default async function TicketsPage() {
       </div>
 
       {/* Seat picker */}
-      {loadingTrips.length === 0 ? (
+      {availableTrips.length === 0 ? (
         <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-8 text-center">
           <p className="text-sm text-zinc-500">
-            No trips are currently loading passengers. Change a trip status to
-            &ldquo;loading&rdquo; first.
+            No scheduled or active trips found. Create a trip first.
           </p>
         </div>
       ) : (
-        <SeatPicker trips={loadingTrips} brandColor={brandColor} />
+        <SeatPicker trips={availableTrips} brandColor={brandColor} />
       )}
 
       {/* Recent tickets */}

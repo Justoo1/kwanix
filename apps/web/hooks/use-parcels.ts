@@ -26,6 +26,7 @@ export interface ParcelRow {
   collected_at: string | null;
   declared_value_ghs: number | null;
   qr_code_base64?: string | null;
+  fee_payment_status?: string;
 }
 
 export interface ParcelsParams {

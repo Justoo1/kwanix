@@ -523,6 +523,7 @@ class TestDriverLocationEndpoint:
     @pytest.mark.asyncio
     async def test_driver_with_active_trip_updates_vehicle_gps(
         self,
+        monkeypatch,
         client: AsyncClient,
         db: AsyncSession,
         company: Company,
@@ -533,6 +534,13 @@ class TestDriverLocationEndpoint:
         driver_token: str,
     ):
         """POST /driver/location updates vehicle GPS when driver has loading/departed trip."""
+        import app.routers.driver as driver_module
+
+        async def _noop(*args, **kwargs):
+            pass
+
+        monkeypatch.setattr(driver_module, "_check_eta_proximity_sms", _noop)
+
         trip = Trip(
             company_id=company.id,
             vehicle_id=active_vehicle.id,
@@ -561,6 +569,7 @@ class TestDriverLocationEndpoint:
     @pytest.mark.asyncio
     async def test_driver_with_loading_trip_updates_gps(
         self,
+        monkeypatch,
         client: AsyncClient,
         db: AsyncSession,
         company: Company,
@@ -571,6 +580,13 @@ class TestDriverLocationEndpoint:
         driver_token: str,
     ):
         """GPS update is accepted for loading trips too."""
+        import app.routers.driver as driver_module
+
+        async def _noop(*args, **kwargs):
+            pass
+
+        monkeypatch.setattr(driver_module, "_check_eta_proximity_sms", _noop)
+
         trip = Trip(
             company_id=company.id,
             vehicle_id=active_vehicle.id,

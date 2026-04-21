@@ -14,6 +14,7 @@ from app.config import settings
 logger = structlog.get_logger()
 
 ARKESEL_URL = "https://sms.arkesel.com/api/v2/sms/send"
+ARKESEL_WHATSAPP_URL = "https://sms.arkesel.com/api/v2/whatsapp/send"
 ARKESEL_BALANCE_URL = "https://sms.arkesel.com/api/v2/clients/balance-details"
 
 
@@ -50,6 +51,38 @@ async def send_sms(recipient: str, message: str, event_type: str = "generic") ->
             return {"status": "failed", "error": str(exc)}
 
 
+async def send_whatsapp(recipient: str, message: str, event_type: str = "generic") -> dict:
+    """
+    Sends a WhatsApp message via Arkesel. recipient must be in 233XXXXXXXXX format.
+    Falls back silently if API key is not configured.
+    """
+    if not settings.arkesel_api_key:
+        logger.warning("arkesel.send_whatsapp.skipped", reason="API key not configured")
+        return {"status": "skipped"}
+
+    headers = {"api-key": settings.arkesel_api_key}
+    payload = {
+        "sender": settings.arkesel_sender_id,
+        "message": message,
+        "recipients": [recipient],
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(ARKESEL_WHATSAPP_URL, json=payload, headers=headers)
+            data = response.json()
+            logger.info(
+                "arkesel.send_whatsapp.sent",
+                event_type=event_type,
+                recipient=recipient,
+                status=data.get("status"),
+            )
+            return data
+        except Exception as exc:
+            logger.error("arkesel.send_whatsapp.failed", event_type=event_type, error=str(exc))
+            return {"status": "failed", "error": str(exc)}
+
+
 async def check_balance() -> dict:
     """Returns the current Arkesel SMS balance."""
     if not settings.arkesel_api_key:
@@ -75,6 +108,7 @@ async def dispatch_sms(
     message: str,
     event_type: str,
     sms_opt_out: bool = False,
+    whatsapp_opt_in: bool = False,
 ) -> None:
     """
     Sends an SMS via send_sms() then persists the outcome to sms_logs.
@@ -88,6 +122,9 @@ async def dispatch_sms(
     if sms_opt_out:
         logger.info("arkesel.dispatch_sms.skipped", reason="sms_opt_out", event_type=event_type)
         return
+
+    if whatsapp_opt_in:
+        await send_whatsapp(recipient, message, event_type)
 
     result = await send_sms(recipient, message, event_type)
 
@@ -170,6 +207,13 @@ def msg_parcel_pickup_reminder(tracking_id: str, station_name: str) -> str:
     )
 
 
+def msg_trip_loading(plate_number: str, from_station: str, departure_time: str) -> str:
+    return (
+        f"Your bus {plate_number} is now loading at {from_station}. "
+        f"Departure is scheduled for {departure_time}. Please proceed to the station. - Kwanix"
+    )
+
+
 def msg_trip_departed(plate_number: str, from_station: str, eta_str: str | None = None) -> str:
     msg = f"Your bus {plate_number} has departed {from_station}."
     if eta_str:
@@ -183,6 +227,17 @@ def msg_trip_arrived(destination: str) -> str:
         f"Your bus has arrived at {destination}. "
         "Please proceed to collect your luggage. - Kwanix"
     )
+
+
+def msg_bus_approaching(destination: str, eta_minutes: int) -> str:
+    return (
+        f"Your bus is approximately {eta_minutes} minutes from {destination}. "
+        f"Please make your way to the arrival point. - Kwanix"
+    )
+
+
+def msg_live_tracking_link(from_station: str, to_station: str, url: str) -> str:
+    return f"Track your {from_station}→{to_station} bus live: {url} - Kwanix"
 
 
 def msg_trip_reminder(

@@ -8,8 +8,11 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Printer, CheckCheck, AlertCircle, ExternalLink, Copy, Check, RotateCcw, Eye } from "lucide-react";
-import { type ParcelRow, useReturnParcel } from "@/hooks/use-parcels";
+import { Printer, CheckCheck, AlertCircle, ExternalLink, Copy, Check, RotateCcw, Eye, Smartphone, CheckCircle2, Clock } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { clientFetch } from "@/lib/client-api";
+import { type ParcelRow, useReturnParcel, parcelKeys } from "@/hooks/use-parcels";
 import type { UserRole } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import {
@@ -148,11 +151,164 @@ function ReturnDialog({
   );
 }
 
+interface MomoState {
+  reference: string;
+  status: string;
+  display_text: string;
+}
+
+function PayParcelDialog({
+  parcel,
+  onClose,
+}: {
+  parcel: ParcelRow;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [momoState, setMomoState] = useState<MomoState | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function handleRequestMomo() {
+    setIsRequesting(true);
+    try {
+      const data = await clientFetch<MomoState>(
+        `parcels/${parcel.id}/initiate-momo-payment`,
+        { method: "POST", body: JSON.stringify({}) }
+      );
+      setMomoState(data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send payment request");
+    } finally {
+      setIsRequesting(false);
+    }
+  }
+
+  async function handleDone() {
+    setIsVerifying(true);
+    try {
+      const data = await clientFetch<{ payment_status: string; updated: boolean }>(
+        `parcels/${parcel.id}/verify-payment`,
+        { method: "POST" }
+      );
+      setResult(data.payment_status);
+      if (data.payment_status === "paid") {
+        qc.invalidateQueries({ queryKey: parcelKeys.all });
+        toast.success("Payment confirmed!");
+      }
+    } catch {
+      setResult("unknown");
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Collect Shipping Fee</DialogTitle>
+        </DialogHeader>
+
+        {result ? (
+          <div className="flex flex-col items-center gap-3 py-4">
+            {result === "paid" ? (
+              <>
+                <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+                <p className="text-sm font-medium text-emerald-700">Payment confirmed!</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-10 w-10 text-amber-500" />
+                <p className="text-sm text-amber-700 text-center">
+                  Payment not confirmed yet. Follow up with the sender.
+                </p>
+              </>
+            )}
+            <DialogFooter className="w-full pt-2">
+              <Button className="w-full" onClick={onClose}>Close</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Parcel summary */}
+            <div className="bg-zinc-50 rounded-lg px-4 py-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Tracking</span>
+                <span className="font-mono font-semibold text-zinc-900">
+                  {parcel.tracking_number}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Sender</span>
+                <span className="text-zinc-900">{parcel.sender_name}</span>
+              </div>
+              <div className="flex justify-between border-t border-zinc-200 pt-2">
+                <span className="font-medium text-zinc-700">Amount</span>
+                <span className="font-bold text-zinc-900">
+                  GHS {Number(parcel.fee_ghs).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* MoMo status display */}
+            {momoState && (
+              <div
+                className={`rounded-lg px-4 py-3 text-sm space-y-1 ${
+                  momoState.status === "pay_offline"
+                    ? "bg-amber-50 border border-amber-200"
+                    : "bg-emerald-50 border border-emerald-200"
+                }`}
+              >
+                {momoState.status === "pay_offline" ? (
+                  <>
+                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+                      Ask sender to dial
+                    </p>
+                    <p className="text-lg font-bold font-mono text-amber-900 text-center py-1">
+                      {momoState.display_text}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+                      Payment request sent
+                    </p>
+                    <p className="text-emerald-800">{momoState.display_text}</p>
+                  </>
+                )}
+              </div>
+            )}
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              {!momoState ? (
+                <Button onClick={handleRequestMomo} disabled={isRequesting}>
+                  <Smartphone className="h-4 w-4 mr-1.5" />
+                  {isRequesting ? "Sending…" : "Request MoMo Payment"}
+                </Button>
+              ) : (
+                <Button onClick={handleDone} disabled={isVerifying}>
+                  {isVerifying ? "Verifying…" : "Done"}
+                </Button>
+              )}
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function buildColumns(
   setPrintTarget: (row: ParcelRow) => void,
   printedIds: Set<number>,
   setReturnTarget: (row: ParcelRow) => void,
-  setDetailTarget: (row: ParcelRow) => void
+  setDetailTarget: (row: ParcelRow) => void,
+  setPayTarget: (row: ParcelRow) => void
 ) {
   const col = createColumnHelper<ParcelRow>();
 
@@ -191,6 +347,47 @@ function buildColumns(
           GHS {Number(i.getValue()).toFixed(2)}
         </span>
       ),
+    }),
+    col.display({
+      id: "payment",
+      header: "Payment",
+      cell: ({ row }) => {
+        const p = row.original;
+        const feeStatus = p.fee_payment_status ?? "cash";
+        if (Number(p.fee_ghs) <= 0) {
+          return <span className="text-xs text-zinc-400">—</span>;
+        }
+        if (feeStatus === "paid") {
+          return (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+              <CheckCircle2 className="h-3 w-3" />
+              Paid
+            </span>
+          );
+        }
+        if (feeStatus === "momo_pending") {
+          return (
+            <button
+              onClick={() => setPayTarget(p)}
+              title="Verify payment"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200 transition-colors"
+            >
+              <Clock className="h-3 w-3" />
+              Pending
+            </button>
+          );
+        }
+        return (
+          <button
+            onClick={() => setPayTarget(p)}
+            title="Collect fee via MoMo"
+            className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            <Smartphone className="h-3 w-3" />
+            Pay
+          </button>
+        );
+      },
     }),
     col.accessor("status", {
       header: "Status",
@@ -336,6 +533,7 @@ export default function ParcelTable({
   const [printedIds, setPrintedIds] = useState<Set<number>>(new Set());
   const [returnTarget, setReturnTarget] = useState<ParcelRow | null>(null);
   const [detailTarget, setDetailTarget] = useState<ParcelRow | null>(null);
+  const [payTarget, setPayTarget] = useState<ParcelRow | null>(null);
 
   useEffect(() => {
     setPrintedIds(new Set(getPrintedIds()));
@@ -346,7 +544,7 @@ export default function ParcelTable({
     setPrintedIds(new Set(getPrintedIds()));
   }, []);
 
-  const columns = buildColumns(setPrintTarget, printedIds, setReturnTarget, setDetailTarget);
+  const columns = buildColumns(setPrintTarget, printedIds, setReturnTarget, setDetailTarget, setPayTarget);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -417,6 +615,10 @@ export default function ParcelTable({
 
       {returnTarget && (
         <ReturnDialog parcel={returnTarget} onClose={() => setReturnTarget(null)} />
+      )}
+
+      {payTarget && (
+        <PayParcelDialog parcel={payTarget} onClose={() => setPayTarget(null)} />
       )}
 
       <ParcelDetailDrawer

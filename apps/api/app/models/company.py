@@ -55,3 +55,12 @@ class Company(Base, TimestampMixin):
     invoices: Mapped[list["SubscriptionInvoice"]] = relationship(  # noqa: F821
         back_populates="company", order_by="SubscriptionInvoice.created_at.desc()"
     )
+    transaction_invoices: Mapped[list["TransactionInvoice"]] = relationship(  # noqa: F821
+        back_populates="company", order_by="TransactionInvoice.created_at.desc()"
+    )
+    corporate_accounts: Mapped[list["CorporateAccount"]] = relationship(  # noqa: F821
+        back_populates="company", order_by="CorporateAccount.name"
+    )
+    loyalty_accounts: Mapped[list["LoyaltyAccount"]] = relationship(  # noqa: F821
+        back_populates="company"
+    )

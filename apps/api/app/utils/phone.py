@@ -74,3 +74,35 @@ def is_valid_gh_phone(raw: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# Paystack mobile-money provider codes for Ghana
+# Maps the 2-digit carrier prefix (after country code) to Paystack's provider code.
+_GH_MOMO_PROVIDERS: dict[str, str] = {
+    "24": "mtn",
+    "54": "mtn",
+    "55": "mtn",
+    "59": "mtn",
+    "25": "mtn",
+    "20": "vod",
+    "50": "vod",
+    "26": "atl",
+    "56": "atl",
+    "27": "atl",
+    "57": "atl",
+}
+
+
+def detect_momo_provider(raw: str) -> str:
+    """
+    Detect the Paystack MoMo provider code ('mtn', 'vod', 'atl') from a
+    Ghanaian phone number. Raises ValueError if the number is unrecognized
+    or the carrier cannot be determined.
+    """
+    normalized = normalize_gh_phone(raw)  # raises ValueError if invalid
+    # normalized = "233XXXXXXXXX" — first 2 digits after 233 are the prefix
+    prefix = normalized[3:5]
+    provider = _GH_MOMO_PROVIDERS.get(prefix)
+    if provider is None:
+        raise ValueError(f"Cannot determine MoMo provider for prefix '{prefix}'")
+    return provider

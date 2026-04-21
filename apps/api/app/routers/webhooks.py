@@ -25,6 +25,7 @@ from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.payment_event import PaymentEvent
 from app.models.subscription import SubscriptionInvoice
+from app.models.parcel import Parcel
 from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip
 from app.models.webhook_event import WebhookEvent
@@ -90,6 +91,31 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
                 raise
 
             return "processed_subscription"
+
+    # ── Check if this reference belongs to a parcel MoMo payment ────────────────
+    if payment_ref and payment_ref.startswith("KX-PAR-"):
+        parcel_result = await db.execute(
+            select(Parcel).where(Parcel.payment_ref == payment_ref)
+        )
+        parcel = parcel_result.scalar_one_or_none()
+        if parcel:
+            if event_type == "charge.success":
+                parcel.fee_payment_status = "paid"
+            elif event_type == "charge.failed":
+                parcel.fee_payment_status = "failed"
+            db.add(parcel)
+            event = PaymentEvent(
+                ticket_id=None,
+                provider_event_id=str(event_id),
+                provider="paystack",
+                event_type=event_type,
+                status=payment_status,
+                raw_payload=json.dumps(payload),
+                received_at=datetime.now(UTC),
+            )
+            db.add(event)
+            await db.commit()
+            return "processed_parcel"
 
     ticket = None
     if payment_ref:

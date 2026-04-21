@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -55,6 +55,8 @@ class Parcel(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text)
     fee_ghs: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     declared_value_ghs: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    insurance_opted_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    insurance_fee_ghs: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
 
     # Transition timestamps (populated when status changes)
     loaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -74,6 +76,14 @@ class Parcel(Base, TimestampMixin):
 
     # Idempotency key from client (prevents duplicate on retry)
     idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+
+    # MoMo / Paystack fee payment tracking
+    # Null means cash payment assumed; set when MoMo is initiated
+    payment_ref: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    # "cash" | "momo_pending" | "paid" | "failed"
+    fee_payment_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="cash", server_default="'cash'"
+    )
 
     # Relationships
     company: Mapped["Company"] = relationship(back_populates="parcels")  # noqa: F821
