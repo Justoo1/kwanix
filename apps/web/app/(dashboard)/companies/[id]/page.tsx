@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import BillingOverrideForm from "./billing-override-form";
+import CompanyActivityTabs from "./company-activity-tabs";
 
 interface CompanyBilling {
   company_id: number;
@@ -53,7 +54,7 @@ export default async function CompanyDetailPage({
   if (!billing) notFound();
 
   return (
-    <div className="space-y-8 max-w-3xl">
+    <div className="space-y-8 max-w-5xl">
       {/* Back nav */}
       <div>
         <Link href="/companies" className="text-sm text-zinc-500 hover:text-zinc-800">
@@ -128,6 +129,12 @@ export default async function CompanyDetailPage({
           currentStatus={billing.subscription_status}
           currentPeriodEnd={billing.current_period_end}
         />
+      </div>
+
+      {/* Activity tabs */}
+      <div className="rounded-xl border border-zinc-200 bg-white p-6">
+        <h2 className="text-base font-medium text-zinc-800 mb-4">Activity</h2>
+        <CompanyActivityTabs companyId={companyId} />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bus,
   Package,
@@ -294,6 +295,149 @@ function OperationalStats({ userName, isAdmin }: { userName: string; isAdmin: bo
   );
 }
 
+// ── Platform config card ──────────────────────────────────────────────────────
+
+interface PlatformConfig {
+  billing_mode: "subscription" | "per_transaction";
+  ticket_fee_ghs: number;
+  parcel_fee_ghs: number;
+}
+
+function PlatformConfigCard() {
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery<PlatformConfig>({
+    queryKey: ["admin", "platform-config"],
+    queryFn: () => clientFetch<PlatformConfig>("admin/platform-config"),
+    staleTime: 5 * 60_000,
+  });
+
+  const [mode, setMode] = useState<string | null>(null);
+  const [ticketFee, setTicketFee] = useState("");
+  const [parcelFee, setParcelFee] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveOk, setSaveOk] = useState(false);
+
+  useEffect(() => {
+    if (data && mode === null) {
+      setMode(data.billing_mode);
+      setTicketFee(String(data.ticket_fee_ghs));
+      setParcelFee(String(data.parcel_fee_ghs));
+    }
+  }, [data, mode]);
+
+  const currentMode = mode ?? data?.billing_mode ?? "subscription";
+  const isPerTx = currentMode === "per_transaction";
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+    setSaveOk(false);
+    try {
+      const body: Partial<PlatformConfig> = {
+        billing_mode: currentMode as PlatformConfig["billing_mode"],
+      };
+      if (isPerTx) {
+        body.ticket_fee_ghs = parseFloat(ticketFee);
+        body.parcel_fee_ghs = parseFloat(parcelFee);
+      }
+      await clientFetch("admin/platform-config", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      await qc.invalidateQueries({ queryKey: ["admin", "platform-config"] });
+      setSaveOk(true);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl bg-card p-[22px] shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-5">
+      <div className="flex items-center justify-between">
+        <span className="text-[15px] font-bold text-foreground">Platform Billing Config</span>
+        {isLoading && <div className="h-4 w-24 animate-pulse rounded bg-muted" />}
+      </div>
+
+      {/* Billing mode toggle */}
+      <div className="flex items-center gap-3">
+        <span className="text-[13px] text-muted-foreground">Billing mode:</span>
+        <button
+          onClick={() => setMode(isPerTx ? "subscription" : "per_transaction")}
+          className={cn(
+            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+            isPerTx ? "bg-primary" : "bg-muted"
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+              isPerTx ? "translate-x-6" : "translate-x-1"
+            )}
+          />
+        </button>
+        <span className="text-[13px] font-semibold text-foreground">
+          {isPerTx ? "Per Transaction" : "Subscription"}
+        </span>
+      </div>
+
+      {/* Fee inputs */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-[0.3px] mb-1.5">
+            Ticket fee (GHS)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={ticketFee}
+            onChange={(e) => setTicketFee(e.target.value)}
+            disabled={!isPerTx}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-[0.3px] mb-1.5">
+            Parcel fee (GHS)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={parcelFee}
+            onChange={(e) => setParcelFee(e.target.value)}
+            disabled={!isPerTx}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+      </div>
+
+      {saveError && (
+        <p className="text-[12px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {saveError}
+        </p>
+      )}
+      {saveOk && (
+        <p className="text-[12px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          Platform config saved successfully.
+        </p>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={saving || isLoading}
+        className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+      >
+        {saving ? "Saving…" : "Save config"}
+      </button>
+    </div>
+  );
+}
+
 // ── Super admin view ──────────────────────────────────────────────────────────
 
 interface AdminStatsData {
@@ -387,6 +531,8 @@ function AdminStats({ userName }: { userName: string }) {
         <InfoRow label="Active trips now" value={stats?.active_trips ?? 0} isLoading={loading} />
         <InfoRow label="Parcels logged today" value={stats?.parcels_today ?? 0} isLoading={loading} />
       </div>
+
+      <PlatformConfigCard />
     </div>
   );
 }

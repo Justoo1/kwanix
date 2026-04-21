@@ -109,7 +109,7 @@ async def create_ticket(
     trip = trip_result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
-    if trip.status not in (TripStatus.scheduled, TripStatus.loading):
+    if trip.status != TripStatus.loading:
         raise HTTPException(
             status_code=400,
             detail=f"Trip is not accepting passengers (status: {trip.status.value})",

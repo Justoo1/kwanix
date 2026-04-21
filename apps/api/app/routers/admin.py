@@ -1627,3 +1627,254 @@ async def get_platform_transaction_fee_summary(db: AsyncSession = Depends(get_db
         )
         for row in rows.all()
     ]
+
+
+# ── Company activity endpoints (super_admin only) ─────────────────────────────
+
+
+class CompanyTripItem(BaseModel):
+    id: int
+    departure_station: str
+    destination_station: str
+    departure_time: datetime
+    status: str
+    ticket_count: int
+    parcel_count: int
+
+
+class CompanyTicketItem(BaseModel):
+    id: int
+    passenger_name: str
+    trip_id: int
+    fare_ghs: float
+    status: str
+    payment_status: str
+    created_at: datetime
+
+
+class CompanyParcelItem(BaseModel):
+    id: int
+    tracking_number: str
+    sender_name: str
+    receiver_name: str
+    status: str
+    fee_ghs: float
+    created_at: datetime
+
+
+class CompanyActivityStats(BaseModel):
+    total_trips: int
+    active_trips: int
+    tickets_today: int
+    parcels_today: int
+    revenue_ghs_today: float
+
+
+@router.get(
+    "/companies/{company_id}/trips",
+    response_model=list[CompanyTripItem],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_trips(
+    company_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: list trips for a company with station names and counts."""
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    if company_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    stmt = (
+        select(Trip)
+        .where(Trip.company_id == company_id)
+        .options(
+            selectinload(Trip.departure_station),
+            selectinload(Trip.destination_station),
+            selectinload(Trip.tickets),
+            selectinload(Trip.parcels),
+        )
+        .order_by(Trip.departure_time.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    trips = result.scalars().all()
+
+    return [
+        CompanyTripItem(
+            id=t.id,
+            departure_station=t.departure_station.name if t.departure_station else "",
+            destination_station=t.destination_station.name if t.destination_station else "",
+            departure_time=t.departure_time,
+            status=t.status.value,
+            ticket_count=len(t.tickets),
+            parcel_count=len(t.parcels),
+        )
+        for t in trips
+    ]
+
+
+@router.get(
+    "/companies/{company_id}/tickets",
+    response_model=list[CompanyTicketItem],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_tickets(
+    company_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: list tickets for a company."""
+    from app.models.ticket import Ticket
+
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    if company_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    stmt = (
+        select(Ticket)
+        .where(Ticket.company_id == company_id)
+        .order_by(Ticket.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    tickets = result.scalars().all()
+
+    return [
+        CompanyTicketItem(
+            id=t.id,
+            passenger_name=t.passenger_name,
+            trip_id=t.trip_id,
+            fare_ghs=float(t.fare_ghs),
+            status=t.status.value,
+            payment_status=t.payment_status.value,
+            created_at=t.created_at,
+        )
+        for t in tickets
+    ]
+
+
+@router.get(
+    "/companies/{company_id}/parcels",
+    response_model=list[CompanyParcelItem],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_parcels(
+    company_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: list parcels for a company."""
+    from app.models.parcel import Parcel
+
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    if company_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    stmt = (
+        select(Parcel)
+        .where(Parcel.company_id == company_id)
+        .order_by(Parcel.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    parcels = result.scalars().all()
+
+    return [
+        CompanyParcelItem(
+            id=p.id,
+            tracking_number=p.tracking_number,
+            sender_name=p.sender_name,
+            receiver_name=p.receiver_name,
+            status=p.status.value,
+            fee_ghs=float(p.fee_ghs),
+            created_at=p.created_at,
+        )
+        for p in parcels
+    ]
+
+
+@router.get(
+    "/companies/{company_id}/stats",
+    response_model=CompanyActivityStats,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_activity_stats(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """super_admin: quick activity stats for a single company."""
+    from app.models.parcel import Parcel
+    from app.models.ticket import Ticket
+
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    if company_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+
+    total_trips = (
+        await db.execute(
+            select(func.count()).select_from(Trip).where(Trip.company_id == company_id)
+        )
+    ).scalar_one()
+
+    active_trips = (
+        await db.execute(
+            select(func.count())
+            .select_from(Trip)
+            .where(
+                Trip.company_id == company_id,
+                Trip.status.in_([TripStatus.loading, TripStatus.departed]),
+            )
+        )
+    ).scalar_one()
+
+    tickets_today = (
+        await db.execute(
+            select(func.count())
+            .select_from(Ticket)
+            .where(
+                Ticket.company_id == company_id,
+                Ticket.created_at >= today_start,
+                Ticket.created_at < tomorrow_start,
+            )
+        )
+    ).scalar_one()
+
+    parcels_today = (
+        await db.execute(
+            select(func.count())
+            .select_from(Parcel)
+            .where(
+                Parcel.company_id == company_id,
+                Parcel.created_at >= today_start,
+                Parcel.created_at < tomorrow_start,
+            )
+        )
+    ).scalar_one()
+
+    revenue_today = (
+        await db.execute(
+            select(func.sum(Parcel.fee_ghs)).where(
+                Parcel.company_id == company_id,
+                Parcel.created_at >= today_start,
+                Parcel.created_at < tomorrow_start,
+            )
+        )
+    ).scalar_one()
+
+    return CompanyActivityStats(
+        total_trips=total_trips,
+        active_trips=active_trips,
+        tickets_today=tickets_today,
+        parcels_today=parcels_today,
+        revenue_ghs_today=float(revenue_today or 0),
+    )
