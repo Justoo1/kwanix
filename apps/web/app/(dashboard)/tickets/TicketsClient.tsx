@@ -50,7 +50,7 @@ export default function TicketsClient({
       </div>
 
       {tab === "new" && (
-        <div className="flex gap-5 items-start">
+        <div className="flex flex-col-reverse gap-5 lg:flex-row lg:items-start">
           {/* Seat picker */}
           <div className="flex-1 min-w-0">
             {availableTrips.length === 0 ? (
@@ -68,8 +68,8 @@ export default function TicketsClient({
             )}
           </div>
 
-          {/* Stats sidebar */}
-          <div className="w-[240px] shrink-0 flex flex-col gap-3">
+          {/* Stats — row on mobile, sidebar on desktop */}
+          <div className="grid grid-cols-3 gap-3 lg:grid-cols-1 lg:w-[220px] lg:shrink-0">
             <StatCard
               icon={<ReceiptText className="h-4 w-4 text-primary" />}
               label="Total Tickets"
