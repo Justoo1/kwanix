@@ -101,12 +101,12 @@ export default async function FleetPage() {
         </div>
       )}
 
-      {/* Map + Active vehicle list side by side */}
-      <div className="flex gap-5">
+      {/* Map + Active vehicle list */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         {/* Map */}
-        <div className="flex-1 bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden relative">
+        <div className="flex-1 min-w-0 bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden relative isolate">
           {fleet.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[420px] text-center gap-3">
+            <div className="flex flex-col items-center justify-center h-[320px] lg:h-[420px] text-center gap-3">
               <MapPin className="h-10 w-10 text-muted-foreground/40" />
               <div>
                 <p className="text-[14px] font-semibold text-foreground/70">No vehicles with GPS data</p>
@@ -116,7 +116,9 @@ export default async function FleetPage() {
               </div>
             </div>
           ) : (
-            <FleetMapClient vehicles={fleet} />
+            <div className="h-[320px] lg:h-[420px] overflow-hidden">
+              <FleetMapClient vehicles={fleet} />
+            </div>
           )}
           {/* Map overlay badge */}
           {fleet.length > 0 && (
@@ -129,11 +131,11 @@ export default async function FleetPage() {
 
         {/* Active vehicle list */}
         {fleet.length > 0 && (
-          <div className="w-[280px] bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden shrink-0">
+          <div className="w-full lg:w-[280px] lg:shrink-0 bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
             <div className="px-[18px] py-3.5 border-b border-border text-[14px] font-bold text-foreground">
               Active Vehicles
             </div>
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border lg:max-h-[380px] lg:overflow-y-auto">
               {fleet.map((v) => (
                 <div key={v.vehicle_id} className="px-[18px] py-3.5 hover:bg-muted/40 transition-colors">
                   <div className="flex justify-between items-center mb-1">

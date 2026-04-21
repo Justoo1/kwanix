@@ -175,7 +175,7 @@ export default function FleetMap({ vehicles }: FleetMapProps) {
   return (
     <>
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <div ref={mapRef} style={{ height: "420px", width: "100%" }} />
+      <div ref={mapRef} style={{ height: "100%", width: "100%" }} />
     </>
   );
 }
