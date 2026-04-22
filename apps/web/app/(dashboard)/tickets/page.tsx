@@ -37,7 +37,6 @@ export default async function TicketsPage() {
         availableTrips={availableTrips}
         recentTickets={recentTickets}
         brandColor={brandColor}
-        totalRevenue={totalRevenue}
         avgFare={avgFare}
         paidTickets={paidTickets}
       />

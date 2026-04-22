@@ -34,12 +34,11 @@ function getScreenMeta(pathname: string) {
 export function TopBar() {
   const pathname = usePathname();
   const { label, sub } = getScreenMeta(pathname);
-  const [time, setTime] = useState("");
+  const fmt = () =>
+    new Date().toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" });
+  const [time, setTime] = useState(fmt);
 
   useEffect(() => {
-    const fmt = () =>
-      new Date().toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" });
-    setTime(fmt());
     const t = setInterval(() => setTime(fmt()), 30_000);
     return () => clearInterval(t);
   }, []);

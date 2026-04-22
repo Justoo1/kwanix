@@ -57,20 +57,26 @@ export default function TripsSection({
   const dateFrom = searchParams.get("from") ?? undefined;
   const dateTo   = searchParams.get("to")   ?? undefined;
 
-  const [trips, setTrips]     = useState<PublicTripResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchKey = `${companyCode}|${dateFrom ?? ""}|${dateTo ?? ""}`;
+  const [result, setResult] = useState<{ key: string; trips: PublicTripResponse[] }>({
+    key: "",
+    trips: [],
+  });
+  const loading = result.key !== fetchKey;
 
   useEffect(() => {
-    setLoading(true);
+    const key = `${companyCode}|${dateFrom ?? ""}|${dateTo ?? ""}`;
     const p = new URLSearchParams({ company_code: companyCode, limit: "100" });
     if (dateFrom) p.set("date_from", dateFrom);
     if (dateTo)   p.set("date_to",   dateTo);
 
     fetch(`${API_BASE}/api/v1/public/trips?${p.toString()}`)
       .then(r => (r.ok ? r.json() : []))
-      .then(data => { setTrips(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => { setTrips([]); setLoading(false); });
+      .then(data => setResult({ key, trips: Array.isArray(data) ? data : [] }))
+      .catch(() => setResult({ key, trips: [] }));
   }, [companyCode, dateFrom, dateTo]);
+
+  const trips = result.trips;
 
   const fmt = (d: string) =>
     new Intl.DateTimeFormat("en-GH", { dateStyle: "medium" }).format(new Date(d + "T00:00:00"));

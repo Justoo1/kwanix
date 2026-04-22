@@ -193,7 +193,7 @@ function InfoRow({ label, value, isLoading }: { label: string; value: string | n
 
 // ── Operational view ──────────────────────────────────────────────────────────
 
-function OperationalStats({ userName, isAdmin }: { userName: string; isAdmin: boolean }) {
+function OperationalStats({ isAdmin }: { userName: string; isAdmin: boolean }) {
   const tripsQuery = useQuery({
     queryKey: ["dashboard", "trips"],
     queryFn: () => clientFetch<TripResponse[]>("trips"),
@@ -447,7 +447,7 @@ interface AdminStatsData {
   revenue_today_ghs: number;
 }
 
-function AdminStats({ userName }: { userName: string }) {
+function AdminStats() {
   const companiesQuery = useQuery({
     queryKey: ["dashboard", "admin", "companies"],
     queryFn: () => clientFetch<CompanyResponse[]>("admin/companies"),
@@ -546,7 +546,7 @@ interface DashboardStatsViewProps {
 
 export function DashboardStatsView({ role, userName }: DashboardStatsViewProps) {
   if (role === "super_admin") {
-    return <AdminStats userName={userName} />;
+    return <AdminStats />;
   }
   return <OperationalStats userName={userName} isAdmin={role === "company_admin"} />;
 }

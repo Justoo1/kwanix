@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AlertTriangle, MapPin, Wifi } from "lucide-react";
+import { AlertTriangle, MapPin } from "lucide-react";
 import Link from "next/link";
 
 import { getSession } from "@/lib/session";

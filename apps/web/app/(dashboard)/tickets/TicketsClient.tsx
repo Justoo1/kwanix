@@ -19,7 +19,6 @@ interface Props {
   availableTrips: TripResponse[];
   recentTickets: TicketResponse[];
   brandColor: string;
-  totalRevenue: number;
   avgFare: number;
   paidTickets: number;
 }
@@ -28,7 +27,6 @@ export default function TicketsClient({
   availableTrips,
   recentTickets,
   brandColor,
-  totalRevenue,
   avgFare,
   paidTickets,
 }: Props) {

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Package, ScanLine } from "lucide-react";
+import { ScanLine } from "lucide-react";
 import Link from "next/link";
 
 import { apiFetch } from "@/lib/api";

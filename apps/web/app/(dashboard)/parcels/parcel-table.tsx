@@ -22,7 +22,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import ParcelPrint from "./parcel-print";
+import ParcelReceiptPrint from "./parcel-receipt-print";
+import { type PrintFormat } from "@/lib/print-utils";
 import { markPrinted, getPrintedIds } from "@/lib/print-tracker";
 import ParcelDetailDrawer from "./parcel-detail-drawer";
 
@@ -485,25 +486,71 @@ function buildColumns(
   ];
 }
 
-// Mounts print layout via portal, fires window.print(), then marks as printed
-function PrintTrigger({
+// Format picker popover shown when a printer icon is clicked
+function PrintFormatPicker({
   parcel,
+  onSelect,
+  onCancel,
+}: {
+  parcel: ParcelRow;
+  onSelect: (format: PrintFormat) => void;
+  onCancel: () => void;
+}) {
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onCancel} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-xl w-56 overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Print Label</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5 font-mono truncate">{parcel.tracking_number}</p>
+          </div>
+          <button
+            onClick={() => onSelect("receipt_80")}
+            className="w-full px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
+          >
+            <div className="text-[13px] font-semibold text-zinc-800">Thermal Receipt</div>
+            <div className="text-[11px] text-zinc-500">80mm roll printer</div>
+          </button>
+          <div className="border-t border-zinc-100" />
+          <button
+            onClick={() => onSelect("label_62")}
+            className="w-full px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
+          >
+            <div className="text-[13px] font-semibold text-zinc-800">Label (QL-800)</div>
+            <div className="text-[11px] text-zinc-500">62mm Brother label tape</div>
+          </button>
+          <div className="border-t border-zinc-100" />
+          <button
+            onClick={onCancel}
+            className="w-full px-4 py-2.5 text-center text-[12px] text-zinc-400 hover:text-zinc-600 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+// Mounts the thermal print layout via portal, fires triggerPrint(), then marks as printed
+function ThermalPrintTrigger({
+  parcel,
+  format,
   onDone,
 }: {
   parcel: ParcelRow;
+  format: PrintFormat;
   onDone: () => void;
 }) {
-  useEffect(() => {
-    const t = setTimeout(() => {
-      window.print();
-      markPrinted(parcel.id);
-      onDone();
-    }, 150);
-    return () => clearTimeout(t);
-  }, [parcel.id, onDone]);
+  function handleDone() {
+    markPrinted(parcel.id);
+    onDone();
+  }
 
-  return createPortal(
-    <ParcelPrint
+  return (
+    <ParcelReceiptPrint
       trackingNumber={parcel.tracking_number}
       senderName={parcel.sender_name}
       receiverName={parcel.receiver_name}
@@ -512,8 +559,11 @@ function PrintTrigger({
       destinationStation={parcel.destination_station_name ?? `Station ${parcel.destination_station_id}`}
       weightKg={parcel.weight_kg}
       feeGhs={parcel.fee_ghs}
-    />,
-    document.body
+      description={parcel.description}
+      declaredValueGhs={parcel.declared_value_ghs}
+      format={format}
+      onDone={handleDone}
+    />
   );
 }
 
@@ -530,6 +580,7 @@ export default function ParcelTable({
 }) {
   "use no memo";
   const [printTarget, setPrintTarget] = useState<ParcelRow | null>(null);
+  const [printFormat, setPrintFormat] = useState<PrintFormat | null>(null);
   const [printedIds, setPrintedIds] = useState<Set<number>>(new Set());
   const [returnTarget, setReturnTarget] = useState<ParcelRow | null>(null);
   const [detailTarget, setDetailTarget] = useState<ParcelRow | null>(null);
@@ -541,6 +592,7 @@ export default function ParcelTable({
 
   const handlePrintDone = useCallback(() => {
     setPrintTarget(null);
+    setPrintFormat(null);
     setPrintedIds(new Set(getPrintedIds()));
   }, []);
 
@@ -609,8 +661,16 @@ export default function ParcelTable({
         </table>
       </div>
 
-      {printTarget && (
-        <PrintTrigger parcel={printTarget} onDone={handlePrintDone} />
+      {printTarget && !printFormat && (
+        <PrintFormatPicker
+          parcel={printTarget}
+          onSelect={(fmt) => setPrintFormat(fmt)}
+          onCancel={() => setPrintTarget(null)}
+        />
+      )}
+
+      {printTarget && printFormat && (
+        <ThermalPrintTrigger parcel={printTarget} format={printFormat} onDone={handlePrintDone} />
       )}
 
       {returnTarget && (

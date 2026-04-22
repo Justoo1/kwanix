@@ -226,8 +226,9 @@
    would collapse the layout entirely). Only #parcel-print-root and its children
    are revealed, pinned to the top-left corner of the physical page.
    ─────────────────────────────────────────────────────────────────────────── */
-/* Screen: keep the print root hidden so it never appears in the UI */
-#parcel-print-root {
+/* Screen: keep all print roots hidden so they never appear in the UI */
+#parcel-print-root,
+#print-root {
   display: none;
 }
 

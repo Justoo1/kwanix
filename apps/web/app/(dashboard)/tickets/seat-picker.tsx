@@ -602,9 +602,9 @@ function TicketModal({
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Reset MoMo state whenever the modal opens for a new seat
-  const prevSeat = useRef<number | null>(null);
-  if (prevSeat.current !== seatNumber) {
-    prevSeat.current = seatNumber;
+  const [lastSeat, setLastSeat] = useState(seatNumber);
+  if (lastSeat !== seatNumber) {
+    setLastSeat(seatNumber);
     if (momoState !== null) setMomoState(null);
     if (errorForSeat !== null) setErrorForSeat(null);
   }

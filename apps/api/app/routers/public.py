@@ -104,6 +104,7 @@ class PublicTicketResponse(BaseModel):
 class PublicRouteResult(BaseModel):
     company_name: str
     company_code: str
+    brand_color: str | None
     trip_id: int
     departure_time: str
     departure_station_name: str
@@ -112,6 +113,8 @@ class PublicRouteResult(BaseModel):
     destination_station_city: str | None
     price_ticket_base: float | None
     seats_available: int
+    booking_open: bool
+    status: str
 
 
 class PublicCompanyResult(BaseModel):
@@ -131,21 +134,24 @@ async def search_public_routes(
     request: Request,
     from_city: str | None = None,
     to_city: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db_public),
 ):
     """
-    Cross-tenant route search for passengers. Returns booking-open trips
-    grouped by company, optionally filtered by departure/destination city.
+    Cross-tenant route search for passengers. Returns scheduled and loading
+    trips, optionally filtered by departure/destination city and date range.
+    Does not require booking_open — shows all upcoming trips.
     No authentication required.
     """
+    from datetime import date as date_type
+
     q = (
         select(Trip)
         .where(
-            Trip.booking_open.is_(True),
             Trip.status.in_([TripStatus.scheduled, TripStatus.loading]),
-            Trip.departure_time > func.now(),
         )
         .options(
             selectinload(Trip.vehicle),
@@ -157,14 +163,30 @@ async def search_public_routes(
         .order_by(Trip.departure_time.asc())
     )
 
+    if date_from or date_to:
+        try:
+            if date_from:
+                q = q.where(func.date(Trip.departure_time) >= date_type.fromisoformat(date_from))
+            if date_to:
+                q = q.where(func.date(Trip.departure_time) <= date_type.fromisoformat(date_to))
+        except ValueError as err:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format, use YYYY-MM-DD"
+            ) from err
+
     if from_city:
-        dep_alias = from_city.strip()
-        q = q.join(Station, Trip.departure_station_id == Station.id).where(
-            Station.city.ilike(f"%{dep_alias}%")
+        from sqlalchemy import or_
+        term = f"%{from_city.strip()}%"
+        dep_sub = select(Station.id).where(
+            or_(Station.city.ilike(term), Station.name.ilike(term))
         )
+        q = q.where(Trip.departure_station_id.in_(dep_sub))
     if to_city:
-        # Need a separate join for destination — use a subquery approach
-        dest_sub = select(Station.id).where(Station.city.ilike(f"%{to_city.strip()}%"))
+        from sqlalchemy import or_
+        term = f"%{to_city.strip()}%"
+        dest_sub = select(Station.id).where(
+            or_(Station.city.ilike(term), Station.name.ilike(term))
+        )
         q = q.where(Trip.destination_station_id.in_(dest_sub))
 
     result = await db.execute(q.limit(limit).offset(offset))
@@ -186,8 +208,6 @@ async def search_public_routes(
             )
         )
         capacity = trip.vehicle.capacity if trip.vehicle else 0
-        seats_available = max(0, capacity - active_seats)
-
         dep_station = trip.departure_station
         dst_station = trip.destination_station
 
@@ -195,6 +215,7 @@ async def search_public_routes(
             PublicRouteResult(
                 company_name=trip.company.name,
                 company_code=trip.company.company_code,
+                brand_color=trip.company.brand_color,
                 trip_id=trip.id,
                 departure_time=trip.departure_time.isoformat(),
                 departure_station_name=dep_station.name if dep_station else "",
@@ -202,7 +223,9 @@ async def search_public_routes(
                 destination_station_name=dst_station.name if dst_station else "",
                 destination_station_city=getattr(dst_station, "city", None),
                 price_ticket_base=float(trip.price_ticket_base) if trip.price_ticket_base else None,
-                seats_available=seats_available,
+                seats_available=max(0, capacity - active_seats),
+                booking_open=trip.booking_open,
+                status=trip.status.value,
             )
         )
     return output
