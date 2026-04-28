@@ -110,19 +110,19 @@ export default function DriversClient({ drivers: initialDrivers, canManage }: Dr
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900">Drivers</h1>
-          <p className="text-sm text-zinc-500 mt-1">
+          <h1 className="text-[22px] font-bold text-foreground">Drivers</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
             Driver accounts for your company.
           </p>
         </div>
         {canManage && (
           <button
             onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-semibold text-white hover:opacity-90 transition-opacity"
           >
             <UserPlus className="h-4 w-4" />
             Add Driver
@@ -131,62 +131,60 @@ export default function DriversClient({ drivers: initialDrivers, canManage }: Dr
       </div>
 
       {/* Driver list */}
-      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-100">
-          <h2 className="text-base font-medium text-zinc-800">
-            All drivers
-            <span className="ml-2 text-sm font-normal text-zinc-400">
-              ({drivers.length})
-            </span>
-          </h2>
+      <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+          <h2 className="text-[14px] font-bold text-foreground">All Drivers</h2>
+          <span className="text-[12px] text-muted-foreground">{drivers.length} total</span>
         </div>
 
         {drivers.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-zinc-400">
-            <Bus className="h-10 w-10 text-zinc-300" />
-            <p className="text-sm">No drivers yet. Add your first driver to get started.</p>
+          <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+            <div className="rounded-2xl p-4 bg-primary/10">
+              <Bus className="h-8 w-8 text-primary" />
+            </div>
+            <p className="text-[13px]">No drivers yet. Add your first driver to get started.</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wide">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">Name</th>
-                <th className="px-6 py-3 text-left font-medium">Phone</th>
-                <th className="px-6 py-3 text-left font-medium">Email</th>
-                <th className="px-6 py-3 text-left font-medium">Status</th>
-                {canManage && <th className="px-6 py-3 text-left font-medium"></th>}
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">Name</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">Phone</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">Email</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">Status</th>
+                {canManage && <th className="px-5 py-3"></th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-border">
               {drivers.map((d) => (
-                <tr key={d.id} className="hover:bg-zinc-50">
-                  <td className="px-6 py-4 font-medium text-zinc-900">{d.full_name}</td>
-                  <td className="px-6 py-4 text-zinc-600">{d.phone}</td>
-                  <td className="px-6 py-4 text-zinc-500">{d.email ?? "—"}</td>
-                  <td className="px-6 py-4">
+                <tr key={d.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-5 py-3.5 text-[13px] font-semibold text-foreground">{d.full_name}</td>
+                  <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{d.phone}</td>
+                  <td className="px-5 py-3.5 text-[13px] text-muted-foreground">{d.email ?? "—"}</td>
+                  <td className="px-5 py-3.5">
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                         d.is_active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-zinc-100 text-zinc-500"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-muted text-muted-foreground"
                       }`}
                     >
                       {d.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
                   {canManage && (
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => { setPwTarget(d); setNewPassword(""); setPwError(null); setPwSuccess(false); }}
-                          className="text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors"
+                          className="text-[12px] font-semibold text-primary hover:opacity-70 transition-opacity"
                         >
                           Change password
                         </button>
                         {d.is_active && (
                           <button
                             onClick={() => setDeactivateTarget(d)}
-                            className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors"
+                            className="text-[12px] font-semibold text-red-500 hover:text-red-700 transition-colors"
                           >
                             Deactivate
                           </button>

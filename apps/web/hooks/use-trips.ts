@@ -19,6 +19,11 @@ export interface VehicleOption {
   capacity: number | null
 }
 
+export interface TripStopInput {
+  station_id: number
+  eta?: string | null
+}
+
 export interface CreateTripPayload {
   vehicle_id: number
   departure_station_id: number
@@ -27,6 +32,7 @@ export interface CreateTripPayload {
   departure_time: string
   base_fare_ghs?: number
   booking_open?: boolean
+  stops?: TripStopInput[]
 }
 
 // ── Query Keys ────────────────────────────────────────────────────────────────

@@ -22,6 +22,8 @@ import {
 import {
   createTicket,
   fetchSeatsForTrip,
+  verifyTicketPayment,
+  type MomoStatus,
   type SeatInfo,
   type TripSeats,
 } from "./actions";
@@ -555,8 +557,10 @@ function BusSeat({ seatNumber, state, brandColor, rgb, onClick }: BusSeatProps) 
         style={{
           height: "9px",
           background: isTaken ? "#d4d4d8" : `rgba(${rgb}, 0.18)`,
-          border: `1.5px solid ${borderColor}`,
           borderTop: "none",
+          borderRight: `1.5px solid ${borderColor}`,
+          borderBottom: `1.5px solid ${borderColor}`,
+          borderLeft: `1.5px solid ${borderColor}`,
           borderRadius: "0 0 6px 6px",
         }}
       />
@@ -585,12 +589,25 @@ function TicketModal({
   onClose,
   onIssued,
 }: TicketModalProps) {
-  // Store the error alongside the seat it was produced for. The derived
-  // `formError` is automatically undefined whenever seatNumber changes,
-  // eliminating the need for a useEffect to clear state on prop changes.
   const [errorForSeat, setErrorForSeat] = useState<{ seat: number | null; msg: string } | null>(null);
   const formError = errorForSeat?.seat === seatNumber ? errorForSeat.msg : undefined;
   const [isPending, startTransition] = useTransition();
+  const [momoState, setMomoState] = useState<{
+    ticketId: number;
+    display_text: string;
+    status: MomoStatus;
+    reference: string;
+    passengerName: string;
+  } | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Reset MoMo state whenever the modal opens for a new seat
+  const [lastSeat, setLastSeat] = useState(seatNumber);
+  if (lastSeat !== seatNumber) {
+    setLastSeat(seatNumber);
+    if (momoState !== null) setMomoState(null);
+    if (errorForSeat !== null) setErrorForSeat(null);
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -599,25 +616,106 @@ function TicketModal({
     startTransition(async () => {
       const result = await createTicket(undefined, fd);
       if (result?.ticket_id) {
-        const name = fd.get("passenger_name") as string | null;
-        toast.success(`Seat ${seatNumber} — Ticket issued`, {
-          description: name ? `Passenger: ${name}` : undefined,
-        });
-        onIssued(seatNumber!, name || null);
-        onClose();
+        const name = (fd.get("passenger_name") as string | null) || null;
+        onIssued(seatNumber!, name);
+        if (result.momo) {
+          setMomoState({
+            ticketId: result.ticket_id,
+            display_text: result.momo.display_text,
+            status: result.momo.status,
+            reference: result.momo.reference,
+            passengerName: name || "Passenger",
+          });
+        } else {
+          // Ticket issued but MoMo failed — show warning toast and close
+          if (result.message) {
+            toast.warning(result.message);
+          } else {
+            toast.success(`Seat ${seatNumber} — Ticket issued`, {
+              description: name ? `Passenger: ${name}` : undefined,
+            });
+          }
+          onClose();
+        }
       } else if (result?.message) {
         setErrorForSeat({ seat: seatNumber ?? null, msg: result.message });
       }
     });
   }
 
+  async function handleMomoDone() {
+    if (!momoState) return;
+    setIsVerifying(true);
+    const verified = await verifyTicketPayment(momoState.ticketId);
+    setIsVerifying(false);
+    const paid = verified?.payment_status === "paid";
+    toast.success(
+      paid
+        ? `Seat ${seatNumber} — Ticket issued & payment confirmed`
+        : `Seat ${seatNumber} — Ticket issued`,
+      { description: momoState.passengerName }
+    );
+    setMomoState(null);
+    onClose();
+  }
+
+  // ── Step 2: MoMo payment pending screen ─────────────────────────────────────
+  if (momoState) {
+    const isOffline = momoState.status === "pay_offline";
+    return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o && !isVerifying) { setMomoState(null); onClose(); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Payment Request Sent — Seat {seatNumber}</DialogTitle>
+            <DialogDescription>
+              {isOffline
+                ? "Ask the passenger to dial the USSD code below on their phone."
+                : "A payment prompt has been sent to the passenger's phone."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {isOffline ? (
+              <div className="rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-3 text-center">
+                <p className="text-xs text-zinc-500 mb-1">USSD Code</p>
+                <p className="font-mono text-lg font-bold tracking-widest text-zinc-800 break-all">
+                  {momoState.display_text}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                📱 {momoState.display_text}
+              </div>
+            )}
+
+            <p className="text-xs text-zinc-500 text-center">
+              Ref: <span className="font-mono">{momoState.reference}</span>
+            </p>
+          </div>
+
+          <DialogFooter>
+            <button
+              onClick={handleMomoDone}
+              disabled={isVerifying}
+              className="w-full rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-opacity"
+              style={{ background: brandColor }}
+            >
+              {isVerifying ? "Verifying payment…" : "Done"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // ── Step 1: Issue ticket form ────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Issue Ticket — Seat {seatNumber}</DialogTitle>
           <DialogDescription>
-            Fill in passenger details to issue the ticket.
+            Fill in passenger details. A MoMo payment request will be sent automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -637,21 +735,24 @@ function TicketModal({
               name="passenger_name"
               placeholder="e.g. Kwame Mensah"
               className="w-full rounded-md border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2"
-              style={
-                { "--tw-ring-color": brandColor } as React.CSSProperties
-              }
+              style={{ "--tw-ring-color": brandColor } as React.CSSProperties}
             />
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-zinc-700">
-              Phone Number
+              Phone Number <span className="text-red-500">*</span>
             </label>
             <input
               name="passenger_phone"
               placeholder="0541234567"
+              required
+              pattern="^(0|\+233|00233)[0-9]{9}$|^(0)[0-9]{9}$"
+              title="Enter a valid Ghana phone number e.g. 0541234567"
               className="w-full rounded-md border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              style={{ "--tw-ring-color": brandColor } as React.CSSProperties}
             />
+            <p className="text-[10px] text-zinc-400">Used for MoMo payment — must be a Ghana number</p>
           </div>
 
           <div className="space-y-1">
@@ -665,6 +766,7 @@ function TicketModal({
               min="0"
               defaultValue={baseFare ?? 0}
               className="w-full rounded-md border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              style={{ "--tw-ring-color": brandColor } as React.CSSProperties}
             />
           </div>
 
@@ -681,7 +783,7 @@ function TicketModal({
               className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-opacity"
               style={{ background: brandColor }}
             >
-              {isPending ? "Issuing…" : "Issue Ticket"}
+              {isPending ? "Sending payment…" : "Issue Ticket & Request Payment"}
             </button>
           </DialogFooter>
         </form>

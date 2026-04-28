@@ -153,11 +153,40 @@ export default function ParcelsClient({
     URL.revokeObjectURL(url);
   }
 
+  // KPI counts from loaded parcels
+  const kpiTotal = filtered.length;
+  const kpiPending = filtered.filter((p) => p.status === "pending").length;
+  const kpiInTransit = filtered.filter((p) => p.status === "in_transit").length;
+  const kpiArrived = filtered.filter((p) => p.status === "arrived").length;
+
   return (
-    <div className="space-y-6">
-      {/* Overdue parcels alert — shown to station_manager+ when uncollected arrivals exceed 3 days */}
+    <div className="flex flex-col gap-6">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        {[
+          { label: "Total", value: kpiTotal, accent: "#64748b" },
+          { label: "Pending", value: kpiPending, accent: "#f59e0b" },
+          { label: "In Transit", value: kpiInTransit, accent: "#3b82f6" },
+          { label: "Arrived", value: kpiArrived, accent: "#008A56" },
+        ].map(({ label, value, accent }) => (
+          <div
+            key={label}
+            className="bg-card rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
+            style={{ borderTop: `3px solid ${accent}` }}
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground mb-1.5">
+              {label}
+            </div>
+            <div className="text-[28px] font-bold leading-none" style={{ color: accent }}>
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Overdue parcels alert */}
       {overdueParcels && overdueParcels.length > 0 && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
           <span>
             <span className="font-semibold">{overdueParcels.length} parcel{overdueParcels.length !== 1 ? "s" : ""}</span>
@@ -172,27 +201,27 @@ export default function ParcelsClient({
         </div>
       )}
 
-      {/* Station-level summary chips — only shown when user has an assigned station */}
+      {/* Station-level summary chips */}
       {stationSummary && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium text-zinc-600">At your station:</span>
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <span className="font-medium text-muted-foreground">At your station:</span>
           {stationSummary.pending > 0 && (
-            <span className="rounded-full bg-amber-100 px-3 py-0.5 text-amber-800 font-medium">
+            <span className="rounded-full bg-amber-100 px-3 py-0.5 text-amber-800 font-semibold text-[11px]">
               {stationSummary.pending} pending
             </span>
           )}
           {stationSummary.in_transit > 0 && (
-            <span className="rounded-full bg-blue-100 px-3 py-0.5 text-blue-800 font-medium">
+            <span className="rounded-full bg-blue-100 px-3 py-0.5 text-blue-800 font-semibold text-[11px]">
               {stationSummary.in_transit} in transit
             </span>
           )}
           {stationSummary.arrived > 0 && (
-            <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-emerald-800 font-medium">
+            <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-emerald-800 font-semibold text-[11px]">
               {stationSummary.arrived} arrived
             </span>
           )}
           {stationSummary.picked_up > 0 && (
-            <span className="rounded-full bg-zinc-100 px-3 py-0.5 text-zinc-700 font-medium">
+            <span className="rounded-full bg-muted px-3 py-0.5 text-muted-foreground font-semibold text-[11px]">
               {stationSummary.picked_up} picked up
             </span>
           )}
@@ -200,7 +229,7 @@ export default function ParcelsClient({
             stationSummary.in_transit === 0 &&
             stationSummary.arrived === 0 &&
             stationSummary.picked_up === 0 && (
-              <span className="text-zinc-400">No active parcels</span>
+              <span className="text-muted-foreground">No active parcels</span>
             )}
         </div>
       )}
@@ -244,29 +273,29 @@ export default function ParcelsClient({
       {/* Table section */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-zinc-800">Parcel Log</h2>
+          <h2 className="text-[15px] font-bold text-foreground">Parcel Log</h2>
           <div className="flex items-center gap-2">
             {canExport && (
               <button
                 onClick={handleExportCsv}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-[12px] font-semibold text-muted-foreground hover:bg-muted/50 transition-colors"
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5" />
                 Export CSV
               </button>
             )}
             <button
               onClick={() => setReportOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-[12px] font-semibold text-muted-foreground hover:bg-muted/50 transition-colors"
             >
-              <FileText className="h-4 w-4" />
+              <FileText className="h-3.5 w-3.5" />
               Report
             </button>
             <button
               onClick={() => setModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[12px] font-semibold text-white hover:opacity-90 transition-opacity"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               Log Parcel
             </button>
           </div>
@@ -286,21 +315,21 @@ export default function ParcelsClient({
 
         {/* Pagination */}
         {(hasPrev || hasNext) && (
-          <div className="flex items-center justify-between mt-4 text-sm">
+          <div className="flex items-center justify-between mt-4 text-[13px]">
             <button
               disabled={!hasPrev}
               onClick={() => setOffset(Math.max(0, offset - PAGE_LIMIT))}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="rounded-xl border border-border px-3 py-1.5 font-semibold text-muted-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               ← Previous
             </button>
-            <span className="text-zinc-500">
+            <span className="text-muted-foreground">
               Showing {offset + 1}–{offset + parcels.length}
             </span>
             <button
               disabled={!hasNext}
               onClick={() => setOffset(offset + PAGE_LIMIT)}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="rounded-xl border border-border px-3 py-1.5 font-semibold text-muted-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next →
             </button>

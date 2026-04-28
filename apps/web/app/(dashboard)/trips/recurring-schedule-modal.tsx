@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { RepeatIcon } from "lucide-react";
+import { RepeatIcon, Plus, Trash2 } from "lucide-react";
 import { clientFetch } from "@/lib/client-api";
-import { useStations, useVehicles } from "@/hooks/use-trips";
+import { useStations, useVehicles, type TripStopInput } from "@/hooks/use-trips";
 
 interface GenerateScheduleResponse {
   trip_ids: number[];
@@ -33,6 +33,7 @@ export default function RecurringScheduleModal() {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState<FormState>(BLANK);
+  const [stops, setStops] = React.useState<TripStopInput[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<GenerateScheduleResponse | null>(null);
@@ -43,6 +44,7 @@ export default function RecurringScheduleModal() {
   function closeModal() {
     setOpen(false);
     setForm(BLANK);
+    setStops([]);
     setError(null);
     setResult(null);
   }
@@ -61,6 +63,8 @@ export default function RecurringScheduleModal() {
           departure_time: form.departure_time,
           days_ahead: Number(form.days_ahead),
           base_fare_ghs: form.base_fare_ghs ? Number(form.base_fare_ghs) : undefined,
+          // ETA omitted for recurring trips — no single departure date to anchor against
+          stops: stops.filter((s) => s.station_id !== 0).map((s) => ({ station_id: s.station_id })),
         }),
       });
       setResult(data);
@@ -205,6 +209,71 @@ export default function RecurringScheduleModal() {
                     onChange={(e) => setForm({ ...form, base_fare_ghs: e.target.value })}
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
                   />
+                </div>
+
+                {/* Route stops */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-zinc-700">
+                      Route stops{" "}
+                      <span className="text-zinc-400 font-normal text-xs">(optional)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setStops((prev) => [...prev, { station_id: 0, eta: null }])}
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add stop
+                    </button>
+                  </div>
+                  {stops.length > 0 && (
+                    <ol className="space-y-2">
+                      {stops.map((stop, idx) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
+                            {idx + 1}
+                          </span>
+                          <select
+                            value={stop.station_id || ""}
+                            onChange={(e) => {
+                              const updated = [...stops];
+                              updated[idx] = { ...updated[idx], station_id: Number(e.target.value) };
+                              setStops(updated);
+                            }}
+                            className="flex-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                          >
+                            <option value="">Select station…</option>
+                            {stations.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="time"
+                            value={stop.eta ?? ""}
+                            onChange={(e) => {
+                              const updated = [...stops];
+                              updated[idx] = {
+                                ...updated[idx],
+                                eta: e.target.value || null,
+                              };
+                              setStops(updated);
+                            }}
+                            className="w-28 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                            title="ETA (optional)"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setStops((prev) => prev.filter((_, i) => i !== idx))}
+                            className="text-zinc-400 hover:text-red-500 transition-colors"
+                            aria-label="Remove stop"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </div>
 
                 <p className="text-xs text-zinc-500">

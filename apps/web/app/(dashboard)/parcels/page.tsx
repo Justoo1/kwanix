@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Package, ScanLine } from "lucide-react";
+import { ScanLine } from "lucide-react";
 import Link from "next/link";
 
 import { apiFetch } from "@/lib/api";
@@ -24,23 +24,23 @@ export default async function ParcelsPage() {
   const stationId: number | null = session?.user.station_id ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Package className="h-6 w-6 text-zinc-500" />
-          <h1 className="text-2xl font-bold text-zinc-900">Parcels</h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-[22px] font-bold text-foreground">Parcels</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">Track and manage parcel logistics</p>
         </div>
         <Link
           href="/parcels/load"
-          className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-semibold text-white hover:opacity-90 transition-opacity"
         >
           <ScanLine className="h-4 w-4" />
           Scan to Load
         </Link>
       </div>
 
-      {/* Client section: create modal + pending queue + full table */}
+      {/* Client section: KPI cards + create modal + pending queue + full table */}
       <ParcelsClient stations={stations} userRole={userRole} stationId={stationId} />
     </div>
   );

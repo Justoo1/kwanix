@@ -353,3 +353,17 @@ clean-prod:
 
 prune:
 	docker system prune -f --volumes
+
+# ── Mobile apps ───────────────────────────────────────────────────────────────
+
+driver-start:
+	cd apps/driver && npx expo start
+
+passenger-start:
+	cd apps/passenger && npx expo start
+
+driver-install:
+	cd apps/driver && npm install
+
+passenger-install:
+	cd apps/passenger && npm install

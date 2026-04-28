@@ -47,10 +47,8 @@ export default async function DriverLayout({
         </div>
       </header>
 
-      <main className="flex-1">
-        <div className="max-w-2xl mx-auto px-4 py-6">
-          {children}
-        </div>
+      <main className="flex-1 max-w-2xl mx-auto w-full">
+        {children}
       </main>
     </div>
   );

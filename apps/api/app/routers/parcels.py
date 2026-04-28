@@ -50,6 +50,7 @@ class CreateParcelRequest(BaseModel):
     description: str | None = Field(None, max_length=500)
     fee_ghs: float = 0.0
     declared_value_ghs: float | None = None
+    insurance_opted_in: bool = False
     idempotency_key: str | None = None
 
     @field_validator("sender_phone", "receiver_phone", mode="before")
@@ -75,12 +76,15 @@ class ParcelResponse(BaseModel):
     weight_kg: float | None = None
     fee_ghs: float
     declared_value_ghs: float | None = None
+    insurance_opted_in: bool = False
+    insurance_fee_ghs: float | None = None
     description: str | None = None
     created_at: datetime | None = None
     loaded_at: datetime | None = None
     arrived_at: datetime | None = None
     collected_at: datetime | None = None
     qr_code_base64: str | None = None
+    fee_payment_status: str = "cash"
 
     model_config = {"from_attributes": True}
 
@@ -186,6 +190,15 @@ async def create_parcel(
         current_user.company.company_code,  # type: ignore[union-attr]
     )
 
+    # Calculate insurance fee: GHS 2.00 flat, or 1% of declared value (whichever is higher)
+    insurance_fee: float | None = None
+    if body.insurance_opted_in:
+        base_insurance = 2.0
+        if body.declared_value_ghs and body.declared_value_ghs > 0:
+            pct_fee = round(body.declared_value_ghs * 0.01, 2)
+            base_insurance = max(base_insurance, pct_fee)
+        insurance_fee = base_insurance
+
     parcel = Parcel(
         company_id=current_user.company_id,
         tracking_number=tracking_number,
@@ -199,6 +212,8 @@ async def create_parcel(
         description=body.description,
         fee_ghs=resolved_fee,
         declared_value_ghs=body.declared_value_ghs,
+        insurance_opted_in=body.insurance_opted_in,
+        insurance_fee_ghs=insurance_fee,
         created_by_id=current_user.id,
         idempotency_key=body.idempotency_key,
         status=ParcelStatus.pending,
@@ -206,6 +221,15 @@ async def create_parcel(
     db.add(parcel)
     await db.commit()
     await db.refresh(parcel, ["origin_station", "destination_station"])
+
+    from app.services.transaction_fee_service import (  # noqa: PLC0415
+        get_platform_config,
+        schedule_fee_record,
+    )
+
+    platform = await get_platform_config(db)
+    if platform.billing_mode == "per_transaction" and current_user.company_id:
+        schedule_fee_record(current_user.company_id, "parcel", parcel.id, platform.parcel_fee_ghs)
 
     # SMS in background — also persists outcome to sms_logs
     background_tasks.add_task(
@@ -225,6 +249,167 @@ async def create_parcel(
     response = _parcel_to_response(parcel, include_stations=True)
     response.qr_code_base64 = generate_qr_base64(parcel.tracking_number)
     return response
+
+
+class InitiateMomoPaymentRequest(BaseModel):
+    phone: str | None = None  # override sender phone; defaults to the parcel's sender_phone
+
+
+class InitiateMomoPaymentResponse(BaseModel):
+    reference: str
+    status: str  # "pending" | "pay_offline" | "success" | "failed"
+    display_text: str  # USSD string or message — show this to the sender/clerk
+
+
+@router.post(
+    "/{parcel_id}/initiate-momo-payment",
+    response_model=InitiateMomoPaymentResponse,
+)
+async def initiate_parcel_momo_payment(
+    parcel_id: int,
+    body: InitiateMomoPaymentRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(
+        require_role(
+            UserRole.station_clerk,
+            UserRole.station_manager,
+            UserRole.company_admin,
+            UserRole.super_admin,
+        )
+    ),
+):
+    """
+    Clerk-initiated MoMo payment for a parcel's shipping fee.
+    The clerk enters the sender's phone number; a USSD prompt or push
+    notification is sent to the sender's phone for approval.
+    The platform fee (if in per_transaction mode) is automatically split
+    to the Kwanix account via Paystack subaccount.
+    """
+    from uuid import uuid4  # noqa: PLC0415
+
+    from sqlalchemy import update  # noqa: PLC0415
+
+    from app.integrations.paystack import charge_mobile_money  # noqa: PLC0415
+    from app.models.transaction_fee import TransactionFee  # noqa: PLC0415
+    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
+    from app.utils.phone import detect_momo_provider, normalize_gh_phone  # noqa: PLC0415
+
+    result = await db.execute(
+        select(Parcel)
+        .where(Parcel.id == parcel_id)
+        .options(selectinload(Parcel.origin_station), selectinload(Parcel.destination_station))
+    )
+    parcel = result.scalar_one_or_none()
+    if parcel is None:
+        raise HTTPException(status_code=404, detail="Parcel not found")
+    if parcel.fee_payment_status == "paid":
+        raise HTTPException(status_code=400, detail="Parcel fee has already been paid via MoMo")
+    if parcel.fee_payment_status == "momo_pending":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "A MoMo payment is already pending for this parcel."
+                " Wait for the customer to approve or retry."
+            ),
+        )
+    if float(parcel.fee_ghs) <= 0:
+        raise HTTPException(status_code=400, detail="This parcel has no shipping fee to collect")
+
+    phone = body.phone if body.phone else parcel.sender_phone
+    try:
+        provider = detect_momo_provider(phone)
+        phone_normalized = normalize_gh_phone(phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    company_result = await db.execute(select(Company).where(Company.id == parcel.company_id))
+    company = company_result.scalar_one_or_none()
+
+    platform = await get_platform_config(db)
+    platform_fee_pesewas: int | None = None
+    if (
+        platform.billing_mode == "per_transaction"
+        and company is not None
+        and company.paystack_subaccount_code
+    ):
+        platform_fee_pesewas = int(platform.parcel_fee_ghs * 100)
+
+    reference = f"KX-PAR-{parcel.id}-{uuid4().hex[:8]}"
+    email = f"{phone_normalized}@kwanix.app"
+    amount_pesewas = int(float(parcel.fee_ghs) * 100)
+
+    data = await charge_mobile_money(
+        amount_pesewas=amount_pesewas,
+        email=email,
+        phone=phone,
+        provider=provider,
+        reference=reference,
+        subaccount=company.paystack_subaccount_code if company else None,
+        transaction_charge=platform_fee_pesewas,
+    )
+
+    parcel.payment_ref = reference
+    parcel.fee_payment_status = "momo_pending"
+
+    # If the platform fee is handled by Paystack split, cancel the pending
+    # TransactionFee record so the sweeper doesn't double-charge the company.
+    if platform_fee_pesewas is not None:
+        await db.execute(
+            update(TransactionFee)
+            .where(
+                TransactionFee.source_id == parcel.id,
+                TransactionFee.fee_type == "parcel",
+                TransactionFee.status == "pending",
+            )
+            .values(status="charged")
+        )
+
+    await db.commit()
+
+    gateway_status = data.get("status", "pending")
+    display_text = (
+        data.get("display_text") or "Ask the sender to approve the prompt on their phone."
+    )
+
+    return InitiateMomoPaymentResponse(
+        reference=reference,
+        status=gateway_status,
+        display_text=display_text,
+    )
+
+
+class VerifyParcelPaymentResponse(BaseModel):
+    payment_status: str
+    updated: bool
+
+
+@router.post("/{parcel_id}/verify-payment", response_model=VerifyParcelPaymentResponse)
+async def verify_parcel_payment(
+    parcel_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Check Paystack and update parcel fee_payment_status if MoMo has completed."""
+    from app.integrations.paystack import verify_transaction  # noqa: PLC0415
+
+    parcel = await get_parcel_or_404(db, parcel_id)
+
+    if parcel.fee_payment_status == "paid":
+        return VerifyParcelPaymentResponse(payment_status="paid", updated=False)
+
+    if not parcel.payment_ref:
+        return VerifyParcelPaymentResponse(payment_status=parcel.fee_payment_status, updated=False)
+
+    try:
+        data = await verify_transaction(parcel.payment_ref)
+        if data.get("status") == "success":
+            parcel.fee_payment_status = "paid"
+            await db.commit()
+            return VerifyParcelPaymentResponse(payment_status="paid", updated=True)
+    except Exception:
+        pass
+
+    return VerifyParcelPaymentResponse(payment_status=parcel.fee_payment_status, updated=False)
 
 
 @router.get("", response_model=list[ParcelResponse])
@@ -826,9 +1011,16 @@ def _parcel_to_response(parcel: Parcel, include_stations: bool = False) -> Parce
         declared_value_ghs=(
             float(parcel.declared_value_ghs) if parcel.declared_value_ghs is not None else None
         ),
+        insurance_opted_in=getattr(parcel, "insurance_opted_in", False),
+        insurance_fee_ghs=(
+            float(parcel.insurance_fee_ghs)
+            if getattr(parcel, "insurance_fee_ghs", None) is not None
+            else None
+        ),
         description=parcel.description,
         created_at=parcel.created_at,
         loaded_at=parcel.loaded_at,
         arrived_at=parcel.arrived_at,
         collected_at=parcel.collected_at,
+        fee_payment_status=parcel.fee_payment_status,
     )

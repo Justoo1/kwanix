@@ -71,82 +71,83 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8 max-w-2xl">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Settings</h1>
-        <p className="text-sm text-zinc-500 mt-1">
+        <h1 className="text-[22px] font-bold text-foreground">Settings</h1>
+        <p className="text-[13px] text-muted-foreground mt-0.5">
           Manage your account and company preferences.
         </p>
       </div>
 
-      {/* Change Password — available to all users */}
-      <div>
-        <h2 className="text-base font-medium text-zinc-800 mb-4">Account</h2>
+      {/* Account */}
+      <SettingsSection title="Account">
         <ChangePasswordCard />
-      </div>
+      </SettingsSection>
 
-      {/* SMS Preferences — available to all users */}
-      <div>
-        <h2 className="text-base font-medium text-zinc-800 mb-4">Notifications</h2>
+      {/* Notifications */}
+      <SettingsSection title="Notifications">
         <SmsPreferencesCard initialOptOut={me?.sms_opt_out ?? false} />
-      </div>
+      </SettingsSection>
 
       {/* Company admin sections */}
       {isCompanyAdmin && company && (
         <>
-          {/* Subscription & Billing — shown first for visibility */}
-          <div>
-            <h2 className="text-base font-medium text-zinc-800 mb-4">Subscription &amp; Billing</h2>
+          <SettingsSection title="Subscription & Billing">
             <SubscriptionCard initialStatus={subscriptionStatus} />
             <InvoiceHistoryCard />
-          </div>
+          </SettingsSection>
 
-          <div className="rounded-xl border border-zinc-200 bg-white p-6 max-w-lg">
-            <div className="mb-6">
-              <h2 className="text-base font-medium text-zinc-800">Company info</h2>
-              <div className="mt-3 space-y-1 text-sm text-zinc-600">
+          <SettingsSection title="Company Info">
+            <div className="bg-card rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+              <div className="space-y-2 text-[13px] text-muted-foreground mb-5">
                 <p>
-                  <span className="text-zinc-400">Name:</span> {company.name}
+                  <span className="text-foreground font-semibold">Name:</span> {company.name}
                 </p>
                 <p>
-                  <span className="text-zinc-400">Code:</span>{" "}
+                  <span className="text-foreground font-semibold">Code:</span>{" "}
                   <span className="font-mono">{company.company_code}</span>
                 </p>
               </div>
+              <div className="border-t border-border pt-5">
+                <p className="text-[13px] font-semibold text-foreground mb-3">Ticket Branding</p>
+                <BrandColorForm currentColor={company.brand_color} />
+              </div>
             </div>
+          </SettingsSection>
 
-            <div className="border-t border-zinc-100 pt-6">
-              <h2 className="text-base font-medium text-zinc-800 mb-4">
-                Ticket branding
-              </h2>
-              <BrandColorForm currentColor={company.brand_color} />
-            </div>
-          </div>
-
-          <div>
-            <h2 className="text-base font-medium text-zinc-800 mb-4">Messaging</h2>
+          <SettingsSection title="Messaging">
             <SmsCreditsCard />
-          </div>
+          </SettingsSection>
 
-          <div>
-            <h2 className="text-base font-medium text-zinc-800 mb-4">Parcel Pricing</h2>
-            <div className="space-y-4">
+          <SettingsSection title="Parcel Pricing">
+            <div className="flex flex-col gap-4">
               <WeightTierCard initialTiers={weightTiersData?.tiers ?? []} />
               <MaxWeightCard initialMaxWeight={company.max_parcel_weight_kg} />
             </div>
-          </div>
+          </SettingsSection>
 
-          <div>
-            <h2 className="text-base font-medium text-zinc-800 mb-4">SLA</h2>
+          <SettingsSection title="SLA">
             <SlaSettingsCard initialThresholdDays={company.sla_threshold_days ?? 2} />
-          </div>
+          </SettingsSection>
 
-          <div>
-            <h2 className="text-base font-medium text-zinc-800 mb-4">API Access</h2>
+          <SettingsSection title="API Access">
             <ApiKeyCard keyPrefix={company.api_key_prefix ?? null} />
-          </div>
+          </SettingsSection>
         </>
       )}
     </div>
+  );
+}
+
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <div className="flex items-center gap-3 mb-3">
+        <h2 className="text-[15px] font-bold text-foreground">{title}</h2>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+      {children}
+    </section>
   );
 }

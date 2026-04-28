@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { ClipboardList } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
@@ -20,16 +21,14 @@ const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800",
   in_transit: "bg-blue-100 text-blue-800",
   arrived: "bg-purple-100 text-purple-800",
-  picked_up: "bg-green-100 text-green-800",
-  returned: "bg-zinc-100 text-zinc-600",
+  picked_up: "bg-emerald-100 text-emerald-800",
+  returned: "bg-muted text-muted-foreground",
 };
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[status] ?? "bg-zinc-100 text-zinc-700"}`}
-    >
-      {status.replace("_", " ")}
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
+      {status.replace(/_/g, " ")}
     </span>
   );
 }
@@ -47,61 +46,60 @@ export default async function AuditLogPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-[22px] font-bold text-foreground">Audit Log</h1>
+        <p className="text-[13px] text-muted-foreground mt-0.5">
           Last 100 parcel status changes across your company.
         </p>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
+      <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
         {entries.length === 0 ? (
-          <p className="px-6 py-10 text-sm text-center text-muted-foreground">
-            No audit entries found.
-          </p>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="rounded-2xl p-4 bg-primary/10 mb-4">
+              <ClipboardList className="h-8 w-8 text-primary" />
+            </div>
+            <p className="text-[14px] font-semibold text-foreground/70">No audit entries found.</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Status changes will appear here.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full">
               <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-                  <th className="px-5 py-3 text-left">Time</th>
-                  <th className="px-5 py-3 text-left">Parcel</th>
-                  <th className="px-5 py-3 text-left">Clerk</th>
-                  <th className="px-5 py-3 text-left">From</th>
-                  <th className="px-5 py-3 text-left">To</th>
-                  <th className="px-5 py-3 text-left">Note</th>
+                <tr className="bg-muted/30">
+                  {["Time", "Parcel", "Clerk", "From", "To", "Note"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.4px] text-muted-foreground">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border">
                 {entries.map((entry) => (
-                  <tr
-                    key={entry.id}
-                    className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 transition-colors"
-                  >
-                    <td className="px-5 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                  <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 text-[12px] text-muted-foreground whitespace-nowrap">
                       {new Intl.DateTimeFormat("en-GH", {
                         dateStyle: "medium",
                         timeStyle: "short",
                       }).format(new Date(entry.occurred_at))}
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs font-semibold text-zinc-800">
+                    <td className="px-5 py-3.5 font-mono text-[12px] font-semibold text-foreground">
                       {entry.parcel_tracking_number ?? "—"}
                     </td>
-                    <td className="px-5 py-3 text-zinc-700">
-                      {entry.clerk_name ?? <span className="text-zinc-400">—</span>}
+                    <td className="px-5 py-3.5 text-[13px] text-foreground">
+                      {entry.clerk_name ?? <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3.5">
                       {entry.previous_status ? (
                         <StatusBadge status={entry.previous_status} />
                       ) : (
-                        <span className="text-zinc-400 text-xs">—</span>
+                        <span className="text-muted-foreground text-[12px]">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3.5">
                       <StatusBadge status={entry.new_status} />
                     </td>
-                    <td className="px-5 py-3 text-zinc-500 text-xs max-w-xs truncate">
+                    <td className="px-5 py-3.5 text-[12px] text-muted-foreground max-w-xs truncate">
                       {entry.note ?? "—"}
                     </td>
                   </tr>

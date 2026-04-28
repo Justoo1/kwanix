@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import Sidebar, { MobileNav } from "@/components/sidebar";
+import { TopBar } from "@/components/top-bar";
 
 interface SubscriptionStatus {
   subscription_status: "trialing" | "active" | "grace" | "suspended" | "cancelled";
@@ -64,12 +65,17 @@ export default async function DashboardLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar — hidden on mobile */}
-      <Sidebar role={session.user.role} />
+      <Sidebar role={session.user.role} userName={session.user.full_name ?? ""} />
 
       {/* Main content column */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {/* Mobile top bar + drawer — hidden on desktop */}
-        <MobileNav role={session.user.role} />
+        <MobileNav role={session.user.role} userName={session.user.full_name ?? ""} />
+
+        {/* Desktop top bar — hidden on mobile */}
+        <div className="hidden md:block">
+          <TopBar />
+        </div>
 
         {/* Subscription warning banner */}
         {subscriptionStatus && <SubscriptionBanner status={subscriptionStatus} />}

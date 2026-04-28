@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies.auth import get_current_user, get_db_for_user, require_role
-from app.integrations.arkesel import msg_trip_arrived, msg_trip_departed, send_sms
+from app.integrations.arkesel import msg_trip_arrived, msg_trip_departed, msg_trip_loading, send_sms
 from app.integrations.email import send_manifest_email
 from app.models.company import Company
 from app.models.parcel import Parcel, ParcelStatus
@@ -34,7 +34,7 @@ VALID_TRANSITIONS: dict[TripStatus, set[TripStatus]] = {
 _MANAGER_ROLES = (UserRole.station_manager, UserRole.company_admin, UserRole.super_admin)
 
 _TRIP_OPTS = [
-    selectinload(Trip.vehicle),
+    selectinload(Trip.vehicle).selectinload(Vehicle.default_driver),
     selectinload(Trip.departure_station),
     selectinload(Trip.destination_station),
     selectinload(Trip.parcels),
@@ -46,6 +46,11 @@ _TRIP_OPTS = [
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 
+class StopInput(BaseModel):
+    station_id: int
+    eta: datetime | None = None
+
+
 class CreateTripRequest(BaseModel):
     vehicle_id: int
     departure_station_id: int
@@ -53,6 +58,7 @@ class CreateTripRequest(BaseModel):
     departure_time: datetime
     base_fare_ghs: float | None = None
     booking_open: bool = False
+    stops: list[StopInput] = []
 
 
 class TripResponse(BaseModel):
@@ -66,6 +72,9 @@ class TripResponse(BaseModel):
     price_ticket_base: float | None = None
     vehicle_plate: str | None = None
     vehicle_capacity: int | None = None
+    vehicle_model: str | None = None
+    vehicle_default_driver_id: int | None = None
+    vehicle_default_driver_name: str | None = None
     departure_station_name: str | None = None
     destination_station_name: str | None = None
     parcel_count: int = 0
@@ -99,6 +108,11 @@ class TripResponse(BaseModel):
         try:
             result["vehicle_plate"] = data.vehicle.plate_number
             result["vehicle_capacity"] = data.vehicle.capacity
+            result["vehicle_model"] = data.vehicle.model
+            result["vehicle_default_driver_id"] = data.vehicle.default_driver_id
+            result["vehicle_default_driver_name"] = (
+                data.vehicle.default_driver.full_name if data.vehicle.default_driver else None
+            )
         except Exception as exc:
             logger.debug("vehicle not loaded on trip", trip_id=data.id, error=str(exc))
         try:
@@ -203,8 +217,21 @@ async def create_trip(
         departure_time=body.departure_time,
         price_ticket_base=body.base_fare_ghs,
         booking_open=body.booking_open,
+        driver_id=vehicle.default_driver_id,
     )
     db.add(trip)
+    await db.flush()
+
+    for i, stop_input in enumerate(body.stops, start=1):
+        db.add(
+            TripStop(
+                trip_id=trip.id,
+                station_id=stop_input.station_id,
+                sequence_order=i,
+                eta=stop_input.eta,
+            )
+        )
+
     await db.commit()
 
     result = await db.execute(select(Trip).where(Trip.id == trip.id).options(*_TRIP_OPTS))
@@ -218,6 +245,7 @@ class GenerateScheduleRequest(BaseModel):
     departure_time: str  # HH:MM
     days_ahead: int = Field(..., ge=1, le=30)
     base_fare_ghs: float | None = None
+    stops: list[StopInput] = []
 
 
 class GenerateScheduleResponse(BaseModel):
@@ -246,6 +274,11 @@ async def generate_schedule(
             status_code=400, detail="departure_time must be a valid HH:MM string"
         ) from exc
 
+    vehicle_result = await db.execute(select(Vehicle).where(Vehicle.id == body.vehicle_id))
+    vehicle = vehicle_result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
     today = datetime.now(UTC).date()
     trip_ids: list[int] = []
 
@@ -259,9 +292,19 @@ async def generate_schedule(
             destination_station_id=body.destination_station_id,
             departure_time=dt,
             price_ticket_base=body.base_fare_ghs,
+            driver_id=vehicle.default_driver_id,
         )
         db.add(trip)
         await db.flush()
+        for seq, stop_input in enumerate(body.stops, start=1):
+            db.add(
+                TripStop(
+                    trip_id=trip.id,
+                    station_id=stop_input.station_id,
+                    sequence_order=seq,
+                    eta=stop_input.eta,
+                )
+            )
         trip_ids.append(trip.id)
 
     await db.commit()
@@ -437,7 +480,18 @@ async def update_trip_status(
     result = await db.execute(select(Trip).where(Trip.id == trip_id).options(*_TRIP_OPTS))
     updated_trip = result.scalar_one()
 
-    if body.status == TripStatus.departed:
+    if body.status == TripStatus.loading:
+        plate = updated_trip.vehicle.plate_number if updated_trip.vehicle else "the bus"
+        from_name = (
+            updated_trip.departure_station.name if updated_trip.departure_station else "origin"
+        )
+        dep_time = (
+            updated_trip.departure_time.strftime("%I:%M %p") if updated_trip.departure_time else ""
+        )
+        sms_msg = msg_trip_loading(plate, from_name, dep_time)
+        background_tasks.add_task(_sms_passengers, updated_trip, sms_msg)
+
+    elif body.status == TripStatus.departed:
         try:
             company_result = await db.execute(
                 select(Company).where(Company.id == updated_trip.company_id)
@@ -579,6 +633,36 @@ async def list_trip_stops(
     ]
 
 
+@router.delete(
+    "/{trip_id}/stops/{stop_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(*_MANAGER_ROLES))],
+)
+async def delete_trip_stop(
+    trip_id: int,
+    stop_id: int,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove an intermediate stop from a scheduled trip."""
+    stop_result = await db.execute(
+        select(TripStop).where(TripStop.id == stop_id, TripStop.trip_id == trip_id)
+    )
+    stop = stop_result.scalar_one_or_none()
+    if stop is None:
+        raise HTTPException(status_code=404, detail="Stop not found on this trip")
+
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = trip_result.scalar_one_or_none()
+    if trip and trip.status != TripStatus.scheduled:
+        raise HTTPException(
+            status_code=400, detail="Stops can only be removed from scheduled trips."
+        )
+
+    await db.delete(stop)
+    await db.commit()
+
+
 class AssignDriverRequest(BaseModel):
     driver_id: int | None = None
 
@@ -654,4 +738,88 @@ async def add_trip_stop(
         sequence_order=stop.sequence_order,
         eta=stop.eta,
         station_name=stop.station.name if stop.station else None,
+    )
+
+
+# ── Flash discount / price update ─────────────────────────────────────────────
+
+
+class TripPriceUpdateRequest(BaseModel):
+    price_ticket_base: float = Field(..., gt=0)
+
+
+class TripPriceUpdateResponse(BaseModel):
+    trip_id: int
+    price_ticket_base: float
+
+
+@router.patch("/{trip_id}/price", response_model=TripPriceUpdateResponse)
+async def update_trip_price(
+    trip_id: int,
+    body: TripPriceUpdateRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+    current_user: User = Depends(require_role(UserRole.company_admin, UserRole.super_admin)),
+):
+    """Update the base ticket price for a trip (for flash discounts)."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    trip.price_ticket_base = body.price_ticket_base
+    await db.commit()
+    return TripPriceUpdateResponse(trip_id=trip.id, price_ticket_base=float(trip.price_ticket_base))
+
+
+# ── Apply demand-intel pricing suggestion ─────────────────────────────────────
+
+
+class ApplyDiscountRequest(BaseModel):
+    discount_pct: int = Field(..., ge=1, le=50)
+
+
+class ApplyDiscountResponse(BaseModel):
+    trip_id: int
+    original_price_ghs: float | None
+    discounted_price_ghs: float | None
+    applied_discount_pct: int
+
+
+@router.patch(
+    "/{trip_id}/apply-discount",
+    response_model=ApplyDiscountResponse,
+    dependencies=[Depends(require_role(UserRole.company_admin, UserRole.super_admin))],
+)
+async def apply_discount(
+    trip_id: int,
+    body: ApplyDiscountRequest,
+    db: AsyncSession = Depends(get_db_for_user),
+):
+    """
+    Apply a percentage discount to the trip's ticket price.
+    Records the discount percentage for audit purposes.
+    """
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    if trip.status not in (TripStatus.scheduled, TripStatus.loading):
+        raise HTTPException(
+            status_code=400,
+            detail="Discounts can only be applied to scheduled or loading trips.",
+        )
+
+    original = float(trip.price_ticket_base) if trip.price_ticket_base else None
+    discounted: float | None = None
+    if original is not None:
+        discounted = round(original * (1 - body.discount_pct / 100), 2)
+        trip.price_ticket_base = discounted
+
+    trip.applied_discount_pct = body.discount_pct
+    await db.commit()
+    return ApplyDiscountResponse(
+        trip_id=trip.id,
+        original_price_ghs=original,
+        discounted_price_ghs=discounted,
+        applied_discount_pct=body.discount_pct,
     )

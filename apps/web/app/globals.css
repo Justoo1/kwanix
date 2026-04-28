@@ -4,36 +4,36 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════════════════════
-   RoutePass Design Tokens
-   Theme: Split-surface — dark indigo sidebar + cool-slate light content
+   Kwanix Design Tokens
+   Theme: Split-surface — dark forest sidebar + mint-tinted content
+   Brand: Deep forest green (#0D1F17) · Primary (#008A56) · Mint (#4ECDA4)
    ═══════════════════════════════════════════════════════════ */
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
   /* ── Main surfaces ──────────────────────────────────────── */
-  /* Subtle cool-slate tint — premium vs plain white */
-  --background:        oklch(0.966 0.009 255);
-  --foreground:        oklch(0.13  0.030 255);
+  --background:        oklch(0.971 0.007 155);   /* #F2F7F4 mint-tinted  */
+  --foreground:        oklch(0.115 0.025 155);   /* #0D1F17 dark forest  */
 
   /* Cards sit on top of --background as pure white panels */
   --card:              oklch(1     0     0);
-  --card-foreground:   oklch(0.13  0.030 255);
+  --card-foreground:   oklch(0.115 0.025 155);
   --popover:           oklch(1     0     0);
-  --popover-foreground:oklch(0.13  0.030 255);
+  --popover-foreground:oklch(0.115 0.025 155);
 
-  /* ── Brand — Royal blue ─────────────────────────────────── */
-  --primary:           oklch(0.50  0.220 255);   /* rich royal blue   */
-  --primary-foreground:oklch(0.98  0.005 255);
+  /* ── Brand — Forest green ───────────────────────────────── */
+  --primary:           oklch(0.52  0.152 155);   /* #008A56 vivid green  */
+  --primary-foreground:oklch(0.98  0.005 155);
 
   /* ── Secondary / muted ──────────────────────────────────── */
-  --secondary:         oklch(0.93  0.012 255);
-  --secondary-foreground: oklch(0.25 0.020 255);
-  --muted:             oklch(0.93  0.012 255);
-  --muted-foreground:  oklch(0.52  0.015 255);
+  --secondary:         oklch(0.93  0.010 155);
+  --secondary-foreground: oklch(0.30 0.030 155);
+  --muted:             oklch(0.93  0.010 155);
+  --muted-foreground:  oklch(0.55  0.020 155);
 
-  /* ── Accent — lighter indigo tint ───────────────────────── */
-  --accent:            oklch(0.92  0.030 265);
-  --accent-foreground: oklch(0.35  0.120 255);
+  /* ── Accent — mint tint ─────────────────────────────────── */
+  --accent:            oklch(0.92  0.025 155);
+  --accent-foreground: oklch(0.35  0.090 155);
 
   /* ── High-contrast alert states (scanning logic) ─────────
      These must be the most visually distinct tokens in the system.
@@ -45,51 +45,51 @@
   --destructive-foreground: oklch(0.98 0     0);
 
   /* ── Borders & inputs ───────────────────────────────────── */
-  --border:  oklch(0.88  0.012 255);
-  --input:   oklch(0.88  0.012 255);
-  --ring:    oklch(0.50  0.220 255);
+  --border:  oklch(0.90  0.010 155);   /* #E8F0EC light green border */
+  --input:   oklch(0.90  0.010 155);
+  --ring:    oklch(0.52  0.152 155);   /* primary green focus ring   */
 
-  /* ── Sidebar — deep indigo-navy (always dark regardless of theme) ── */
-  --sidebar:                   oklch(0.150 0.040 260);
-  --sidebar-foreground:        oklch(0.90  0.010 260);
-  --sidebar-primary:           oklch(0.55  0.220 255);   /* active item blue  */
-  --sidebar-primary-foreground:oklch(0.98  0.005 255);
-  --sidebar-accent:            oklch(0.22  0.050 260);   /* hover bg          */
-  --sidebar-accent-foreground: oklch(0.95  0.010 260);
-  --sidebar-border:            oklch(0.22  0.040 260);
-  --sidebar-ring:              oklch(0.55  0.220 255);
+  /* ── Sidebar — dark forest (always dark regardless of theme) ── */
+  --sidebar:                   oklch(0.115 0.025 155);  /* #0D1F17 dark forest       */
+  --sidebar-foreground:        oklch(0.90  0.010 155);
+  --sidebar-primary:           oklch(0.20  0.055 155);  /* active item bg (mint tint)*/
+  --sidebar-primary-foreground:oklch(0.77  0.110 165);  /* #4ECDA4 mint active icon  */
+  --sidebar-accent:            oklch(0.17  0.020 155);  /* hover bg                  */
+  --sidebar-accent-foreground: oklch(0.90  0.010 155);
+  --sidebar-border:            oklch(0.18  0.018 155);  /* subtle divider            */
+  --sidebar-ring:              oklch(0.77  0.110 165);
 
   /* ── Charts ─────────────────────────────────────────────── */
-  --chart-1: oklch(0.50  0.220 255);   /* blue    */
-  --chart-2: oklch(0.68  0.210 145);   /* green   */
-  --chart-3: oklch(0.58  0.265 27);    /* red     */
-  --chart-4: oklch(0.72  0.180 75);    /* amber   */
-  --chart-5: oklch(0.60  0.200 310);   /* violet  */
+  --chart-1: oklch(0.52  0.152 155);   /* primary green  */
+  --chart-2: oklch(0.77  0.110 165);   /* mint accent    */
+  --chart-3: oklch(0.58  0.265 27);    /* red            */
+  --chart-4: oklch(0.72  0.180 75);    /* amber          */
+  --chart-5: oklch(0.60  0.200 310);   /* violet         */
 }
 
 /* Dark mode — optional, for future toggle; sidebar stays the same */
 .dark {
-  --background:        oklch(0.12  0.020 255);
-  --foreground:        oklch(0.93  0.010 255);
-  --card:              oklch(0.16  0.025 255);
-  --card-foreground:   oklch(0.93  0.010 255);
-  --popover:           oklch(0.16  0.025 255);
-  --popover-foreground:oklch(0.93  0.010 255);
-  --primary:           oklch(0.62  0.220 255);
-  --primary-foreground:oklch(0.98  0.005 255);
-  --secondary:         oklch(0.20  0.030 255);
-  --secondary-foreground: oklch(0.90 0.010 255);
-  --muted:             oklch(0.20  0.030 255);
-  --muted-foreground:  oklch(0.58  0.015 255);
-  --accent:            oklch(0.24  0.050 265);
-  --accent-foreground: oklch(0.85  0.050 255);
+  --background:        oklch(0.12  0.020 155);
+  --foreground:        oklch(0.93  0.010 155);
+  --card:              oklch(0.16  0.025 155);
+  --card-foreground:   oklch(0.93  0.010 155);
+  --popover:           oklch(0.16  0.025 155);
+  --popover-foreground:oklch(0.93  0.010 155);
+  --primary:           oklch(0.62  0.152 155);
+  --primary-foreground:oklch(0.98  0.005 155);
+  --secondary:         oklch(0.20  0.030 155);
+  --secondary-foreground: oklch(0.90 0.010 155);
+  --muted:             oklch(0.20  0.030 155);
+  --muted-foreground:  oklch(0.58  0.015 155);
+  --accent:            oklch(0.24  0.040 155);
+  --accent-foreground: oklch(0.85  0.040 155);
   --success:           oklch(0.70  0.215 145);
   --success-foreground:oklch(0.10  0.015 145);
   --destructive:       oklch(0.62  0.265 27);
   --destructive-foreground: oklch(0.98 0 0);
-  --border:            oklch(0.25  0.025 255);
-  --input:             oklch(0.25  0.025 255);
-  --ring:              oklch(0.62  0.220 255);
+  --border:            oklch(0.25  0.025 155);
+  --input:             oklch(0.25  0.025 155);
+  --ring:              oklch(0.62  0.152 155);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@
   --color-sidebar-border:          var(--sidebar-border);
   --color-sidebar-ring:            var(--sidebar-ring);
 
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -186,7 +186,7 @@
 
   /* Glow halos on hover — used for scanning CTA buttons */
   .btn-glow-primary:hover {
-    box-shadow: 0 0 20px oklch(0.50 0.220 255 / 0.35);
+    box-shadow: 0 0 20px oklch(0.52 0.152 155 / 0.40);
   }
   .btn-glow-success:hover {
     box-shadow: 0 0 20px oklch(0.68 0.210 145 / 0.45);
@@ -226,8 +226,9 @@
    would collapse the layout entirely). Only #parcel-print-root and its children
    are revealed, pinned to the top-left corner of the physical page.
    ─────────────────────────────────────────────────────────────────────────── */
-/* Screen: keep the print root hidden so it never appears in the UI */
-#parcel-print-root {
+/* Screen: keep all print roots hidden so they never appear in the UI */
+#parcel-print-root,
+#print-root {
   display: none;
 }
 

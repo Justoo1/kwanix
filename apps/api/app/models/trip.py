@@ -58,6 +58,7 @@ class Trip(Base, TimestampMixin):
     price_parcel_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     price_ticket_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     booking_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    applied_discount_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
     driver_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

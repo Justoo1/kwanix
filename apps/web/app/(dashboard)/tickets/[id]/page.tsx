@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import CancelButton from "./cancel-button";
-import PrintButton from "./print-button";
+import TicketPrintMenu from "./ticket-print-menu";
 import QrButton from "./qr-button";
 import RefundButton from "./refund-button";
 import ShareButton from "./share-button";
@@ -99,7 +99,21 @@ export default async function TicketDetailPage({
             defaultPhone={hasRealPhone ? ticket.passenger_phone : null}
             ticketUrl={ticketUrl}
           />
-          <PrintButton />
+          <TicketPrintMenu
+            ticketId={ticket.id}
+            ticketUrl={ticketUrl}
+            passengerName={ticket.passenger_name}
+            passengerPhone={ticket.passenger_phone}
+            seatNumber={ticket.seat_number}
+            fareGhs={ticket.fare_ghs}
+            status={ticket.status}
+            paymentStatus={ticket.payment_status}
+            departureStation={ticket.departure_station}
+            destinationStation={ticket.destination_station}
+            departureTime={ticket.departure_time}
+            vehiclePlate={ticket.vehicle_plate}
+            companyName={ticket.company_name}
+          />
           {isCompanyAdmin && ticket.payment_status !== "refunded" && (
             <RefundButton ticketId={ticket.id} />
           )}

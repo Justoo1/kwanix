@@ -1,13 +1,17 @@
 # Import all models here so Alembic autogenerate picks them up
 from app.models.base import Base, TimestampMixin
 from app.models.company import Company
+from app.models.corporate_account import CorporateAccount
+from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.parcel import Parcel, ParcelLog, ParcelStatus
 from app.models.payment_event import PaymentEvent
+from app.models.platform_config import PlatformConfig
 from app.models.sms_log import SmsLog
 from app.models.station import Station
 from app.models.subscription import SubscriptionInvoice, SubscriptionPlan
 from app.models.ticket import PaymentStatus, Ticket, TicketStatus
 from app.models.tracking_sequence import TrackingSequence
+from app.models.transaction_fee import TransactionFee, TransactionInvoice
 from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
 from app.models.vehicle import Vehicle, VehicleMaintenanceLog
@@ -17,6 +21,9 @@ __all__ = [
     "Base",
     "TimestampMixin",
     "Company",
+    "CorporateAccount",
+    "LoyaltyAccount",
+    "LoyaltyTransaction",
     "User",
     "UserRole",
     "Station",
@@ -36,5 +43,8 @@ __all__ = [
     "TrackingSequence",
     "SubscriptionPlan",
     "SubscriptionInvoice",
+    "PlatformConfig",
+    "TransactionFee",
+    "TransactionInvoice",
     "WebhookEvent",
 ]

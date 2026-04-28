@@ -113,9 +113,7 @@ async def track_parcel(request: Request, tracking_id: str, db: AsyncSession = De
 
 @router.get("/{tracking_id}/ai-insight", response_model=AIInsightResponse)
 @limiter.limit("10/minute")
-async def parcel_ai_insight(
-    request: Request, tracking_id: str, db: AsyncSession = Depends(get_db)
-):
+async def parcel_ai_insight(request: Request, tracking_id: str, db: AsyncSession = Depends(get_db)):
     """Return an AI-generated natural language status update for the parcel recipient."""
     if not settings.gemini_api_key:
         raise HTTPException(
@@ -148,6 +146,7 @@ async def parcel_ai_insight(
 
     # Build compact context for the prompt
     trip = parcel.current_trip
+
     def _fmt_log(e: ParcelLog) -> str:
         ts = e.occurred_at.strftime("%Y-%m-%d %H:%M")
         prev = e.previous_status or "created"

@@ -17,6 +17,7 @@ logger = structlog.get_logger()
 PAYSTACK_INITIALIZE_URL = "https://api.paystack.co/transaction/initialize"
 PAYSTACK_REFUND_URL = "https://api.paystack.co/refund"
 PAYSTACK_CHARGE_AUTH_URL = "https://api.paystack.co/transaction/charge_authorization"
+PAYSTACK_CHARGE_URL = "https://api.paystack.co/charge"
 PAYSTACK_CUSTOMER_URL = "https://api.paystack.co/customer"
 PAYSTACK_SUBACCOUNT_URL = "https://api.paystack.co/subaccount"
 
@@ -34,6 +35,7 @@ async def initialize_transaction(
     callback_url: str | None = None,
     cancel_action: str | None = None,
     subaccount: str | None = None,
+    transaction_charge: int | None = None,
 ) -> dict:
     """
     Calls POST /transaction/initialize on Paystack.
@@ -42,6 +44,9 @@ async def initialize_transaction(
         amount_kobo: Amount in the smallest currency unit (pesewas for GHS).
         email: Customer email (required by Paystack).
         reference: Unique transaction reference.
+        transaction_charge: Flat platform fee in pesewas to route to the main
+            (Kwanix) account. Requires subaccount to be set. The rest of the
+            payment goes to the company subaccount.
 
     Returns:
         Paystack data dict with authorization_url, access_code, reference.
@@ -66,6 +71,10 @@ async def initialize_transaction(
     if subaccount:
         payload["subaccount"] = subaccount
         payload["bearer"] = "subaccount"  # company bears Paystack transaction fee
+        if transaction_charge is not None and transaction_charge > 0:
+            # transaction_charge: flat amount (pesewas) credited to the main
+            # Kwanix Paystack account from each split payment
+            payload["transaction_charge"] = transaction_charge
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.post(PAYSTACK_INITIALIZE_URL, json=payload, headers=headers)
@@ -268,6 +277,106 @@ async def charge_authorization(
         "paystack.charge_authorization.result",
         reference=reference,
         gateway_status=data.get("status"),
+    )
+    return data
+
+
+async def charge_mobile_money(
+    amount_pesewas: int,
+    email: str,
+    phone: str,
+    provider: str,
+    reference: str,
+    subaccount: str | None = None,
+    transaction_charge: int | None = None,
+) -> dict:
+    """
+    POST /charge — initiates a Ghana Mobile Money (MoMo) charge.
+
+    The customer receives a USSD prompt or push notification on their phone.
+    The clerk must ask the customer to approve before the charge completes.
+
+    Args:
+        amount_pesewas: Amount in pesewas (1 GHS = 100 pesewas).
+        email: Customer email (required by Paystack; use phone@kwanix.app as fallback).
+        phone: Customer phone in local (0XXXXXXXXX) or E.164 (+233...) format.
+        provider: Paystack MoMo provider code — "mtn", "vod", or "atl".
+        reference: Unique transaction reference.
+        subaccount: Company subaccount code for split payment.
+        transaction_charge: Flat platform fee in pesewas routed to the main
+            Kwanix account when a subaccount is used.
+
+    Returns:
+        Paystack data dict. Key fields:
+          status       — "pending" | "pay_offline" | "success" | "failed"
+          display_text — USSD string or human message (show to clerk/customer)
+          reference    — echoed reference
+
+    Raises:
+        HTTP 502 on non-2xx Paystack response.
+    """
+    if not settings.paystack_secret_key:
+        logger.warning("paystack.charge_momo.skipped", reason="API key not configured")
+        return {
+            "status": "pending",
+            "display_text": "Test mode — no real charge",
+            "reference": reference,
+        }
+
+    headers = {
+        "Authorization": f"Bearer {settings.paystack_secret_key}",
+        "Content-Type": "application/json",
+    }
+    payload: dict = {
+        "amount": amount_pesewas,
+        "email": email,
+        "currency": "GHS",
+        "reference": reference,
+        "mobile_money": {
+            "phone": phone,
+            "provider": provider,
+        },
+    }
+    if subaccount:
+        payload["subaccount"] = subaccount
+        payload["bearer"] = "subaccount"
+        if transaction_charge is not None and transaction_charge > 0:
+            payload["transaction_charge"] = transaction_charge
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(PAYSTACK_CHARGE_URL, json=payload, headers=headers)
+
+    if not response.is_success:
+        logger.error(
+            "paystack.charge_momo.http_error",
+            status_code=response.status_code,
+            reference=reference,
+            body=response.text,
+        )
+        # Paystack test keys don't support arbitrary MoMo test numbers.
+        # Fall back to a mock so the UI flow works end-to-end in dev/staging.
+        if settings.paystack_secret_key.startswith("sk_test_"):
+            logger.warning(
+                "paystack.charge_momo.test_fallback",
+                reference=reference,
+                reason="test key — Paystack rejected MoMo, returning mock",
+            )
+            return {
+                "status": "pay_offline",
+                "display_text": "*170# (test mode)",
+                "reference": reference,
+            }
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider error — could not initiate MoMo charge",
+        )
+
+    data = response.json().get("data", {})
+    logger.info(
+        "paystack.charge_momo.initiated",
+        reference=reference,
+        gateway_status=data.get("status"),
+        provider=provider,
     )
     return data
 
