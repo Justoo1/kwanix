@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { createCompany } from "./actions";
 
 export default function CreateCompanyForm() {
   const [state, action, pending] = useActionState(createCompany, undefined);
+  const [billingMode, setBillingMode] = useState("subscription");
 
   return (
     <form action={action} className="space-y-4">
@@ -65,6 +66,45 @@ export default function CreateCompanyForm() {
             type="text"
             placeholder="accra-express"
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="billing_mode"
+            className="block text-sm font-medium text-zinc-700 mb-1"
+          >
+            Billing mode
+          </label>
+          <select
+            id="billing_mode"
+            name="billing_mode"
+            value={billingMode}
+            onChange={(e) => setBillingMode(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+          >
+            <option value="subscription">Subscription</option>
+            <option value="per_transaction">Per Transaction</option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor="transaction_fee_pct"
+            className="block text-sm font-medium text-zinc-700 mb-1"
+          >
+            Transaction fee %{" "}
+            <span className="text-zinc-400 font-normal">(blank = platform default)</span>
+          </label>
+          <input
+            id="transaction_fee_pct"
+            name="transaction_fee_pct"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="e.g. 5.00"
+            disabled={billingMode !== "per_transaction"}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
         </div>
       </div>

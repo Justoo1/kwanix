@@ -600,6 +600,7 @@ function TicketModal({
     passengerName: string;
   } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"momo" | "cash">("momo");
 
   // Reset MoMo state whenever the modal opens for a new seat
   const [lastSeat, setLastSeat] = useState(seatNumber);
@@ -607,6 +608,7 @@ function TicketModal({
     setLastSeat(seatNumber);
     if (momoState !== null) setMomoState(null);
     if (errorForSeat !== null) setErrorForSeat(null);
+    if (paymentMethod !== "momo") setPaymentMethod("momo");
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -626,6 +628,11 @@ function TicketModal({
             reference: result.momo.reference,
             passengerName: name || "Passenger",
           });
+        } else if (result.paidCash) {
+          toast.success(`Seat ${seatNumber} — Ticket issued & paid (cash)`, {
+            description: name ? `Passenger: ${name}` : undefined,
+          });
+          onClose();
         } else {
           // Ticket issued but MoMo failed — show warning toast and close
           if (result.message) {
@@ -715,7 +722,9 @@ function TicketModal({
         <DialogHeader>
           <DialogTitle>Issue Ticket — Seat {seatNumber}</DialogTitle>
           <DialogDescription>
-            Fill in passenger details. A MoMo payment request will be sent automatically.
+            {paymentMethod === "cash"
+              ? "Fill in passenger details. Collect cash from the passenger before issuing."
+              : "Fill in passenger details. A MoMo payment request will be sent automatically."}
           </DialogDescription>
         </DialogHeader>
 
@@ -726,6 +735,29 @@ function TicketModal({
         >
           <input type="hidden" name="trip_id" value={tripId} />
           <input type="hidden" name="seat_number" value={seatNumber ?? ""} />
+          <input type="hidden" name="payment_method" value={paymentMethod} />
+
+          {/* Payment method */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-700">Payment Method</label>
+            <div className="flex gap-2">
+              {(["momo", "cash"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPaymentMethod(m)}
+                  className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    paymentMethod === m
+                      ? "text-white border-transparent"
+                      : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                  }`}
+                  style={paymentMethod === m ? { background: brandColor } : undefined}
+                >
+                  {m === "momo" ? "Mobile Money" : "Cash"}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-zinc-700">
@@ -752,7 +784,11 @@ function TicketModal({
               className="w-full rounded-md border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2"
               style={{ "--tw-ring-color": brandColor } as React.CSSProperties}
             />
-            <p className="text-[10px] text-zinc-400">Used for MoMo payment — must be a Ghana number</p>
+            <p className="text-[10px] text-zinc-400">
+              {paymentMethod === "cash"
+                ? "For the ticket record — must be a Ghana number"
+                : "Used for MoMo payment — must be a Ghana number"}
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -783,7 +819,13 @@ function TicketModal({
               className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-opacity"
               style={{ background: brandColor }}
             >
-              {isPending ? "Sending payment…" : "Issue Ticket & Request Payment"}
+              {isPending
+                ? paymentMethod === "cash"
+                  ? "Issuing ticket…"
+                  : "Sending payment…"
+                : paymentMethod === "cash"
+                  ? "Issue Ticket (Cash)"
+                  : "Issue Ticket & Request Payment"}
             </button>
           </DialogFooter>
         </form>

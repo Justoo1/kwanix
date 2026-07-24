@@ -46,6 +46,8 @@ interface SubscriptionStatus {
   has_payment_method: boolean;
   has_subaccount: boolean;
   billing_email: string | null;
+  billing_mode: "subscription" | "per_transaction";
+  transaction_fee_pct: number;
 }
 
 export default async function SettingsPage() {

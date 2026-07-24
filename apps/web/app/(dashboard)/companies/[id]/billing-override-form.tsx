@@ -8,15 +8,31 @@ interface Props {
   companyId: number;
   currentStatus: string;
   currentPeriodEnd: string | null;
+  currentBillingMode: string;
+  currentTransactionFeePct: number | null;
 }
 
 const STATUSES = ["trialing", "active", "grace", "suspended", "cancelled"] as const;
+const BILLING_MODES = [
+  { value: "subscription", label: "Subscription" },
+  { value: "per_transaction", label: "Per Transaction" },
+] as const;
 
-export default function BillingOverrideForm({ companyId, currentStatus, currentPeriodEnd }: Props) {
+export default function BillingOverrideForm({
+  companyId,
+  currentStatus,
+  currentPeriodEnd,
+  currentBillingMode,
+  currentTransactionFeePct,
+}: Props) {
   const router = useRouter();
   const [status, setStatus] = useState(currentStatus);
   const [periodEnd, setPeriodEnd] = useState(
     currentPeriodEnd ? currentPeriodEnd.slice(0, 10) : ""
+  );
+  const [billingMode, setBillingMode] = useState(currentBillingMode);
+  const [feePct, setFeePct] = useState(
+    currentTransactionFeePct != null ? String(currentTransactionFeePct) : ""
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +44,12 @@ export default function BillingOverrideForm({ companyId, currentStatus, currentP
     setError(null);
     setSuccess(false);
 
-    const body: Record<string, string | null> = { subscription_status: status };
-    if (periodEnd) {
-      body.current_period_end = new Date(periodEnd).toISOString();
-    } else {
-      body.current_period_end = null;
-    }
+    const body: Record<string, string | number | null> = {
+      subscription_status: status,
+      billing_mode: billingMode,
+      transaction_fee_pct: feePct ? Number(feePct) : null,
+    };
+    body.current_period_end = periodEnd ? new Date(periodEnd).toISOString() : null;
 
     try {
       await clientFetch(`admin/companies/${companyId}/billing/override`, {
@@ -78,6 +94,39 @@ export default function BillingOverrideForm({ companyId, currentStatus, currentP
             value={periodEnd}
             onChange={(e) => setPeriodEnd(e.target.value)}
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-500 uppercase tracking-wide mb-1">
+            Billing mode
+          </label>
+          <select
+            value={billingMode}
+            onChange={(e) => setBillingMode(e.target.value)}
+            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+          >
+            {BILLING_MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-500 uppercase tracking-wide mb-1">
+            Transaction fee % <span className="text-zinc-400">(blank = platform default)</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="e.g. 5.00"
+            value={feePct}
+            onChange={(e) => setFeePct(e.target.value)}
+            disabled={billingMode !== "per_transaction"}
+            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-300"
           />
         </div>
       </div>

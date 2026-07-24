@@ -39,11 +39,23 @@ router = APIRouter()
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 
+_VALID_BILLING_MODES = {"subscription", "per_transaction"}
+
+
 class CompanyCreate(BaseModel):
     name: str
     company_code: str
     subdomain: str | None = None
     brand_color: str | None = None
+    billing_mode: str = "subscription"
+    transaction_fee_pct: float | None = None
+
+    @field_validator("billing_mode")
+    @classmethod
+    def validate_billing_mode(cls, v: str) -> str:
+        if v not in _VALID_BILLING_MODES:
+            raise ValueError(f"billing_mode must be one of: {_VALID_BILLING_MODES}")
+        return v
 
 
 class CompanyResponse(BaseModel):
@@ -56,6 +68,8 @@ class CompanyResponse(BaseModel):
     api_key_prefix: str | None = None  # first 8 chars of api_key, never full key
     max_parcel_weight_kg: float | None = None
     sla_threshold_days: int = 2
+    billing_mode: str = "subscription"
+    transaction_fee_pct: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +86,12 @@ class CompanyResponse(BaseModel):
             api_key_prefix=prefix,
             max_parcel_weight_kg=company.max_parcel_weight_kg,
             sla_threshold_days=company.sla_threshold_days,
+            billing_mode=company.billing_mode,
+            transaction_fee_pct=(
+                float(company.transaction_fee_pct)
+                if company.transaction_fee_pct is not None
+                else None
+            ),
         )
 
 
@@ -160,6 +180,8 @@ async def create_company(
         api_key=secrets.token_urlsafe(32),
         subscription_status="trialing",
         trial_ends_at=datetime.now(UTC) + timedelta(days=30),
+        billing_mode=body.billing_mode,
+        transaction_fee_pct=body.transaction_fee_pct,
     )
     db.add(company)
     await db.commit()
@@ -809,21 +831,28 @@ async def get_daily_stats(
             parcels_q = parcels_q.where(Parcel.company_id == current_user.company_id)
         parcels_count = (await db.execute(parcels_q)).scalar_one()
 
-        # Revenue (parcel fees)
-        revenue_q = select(func.sum(Parcel.fee_ghs)).where(
+        # Revenue (parcel fees + ticket fares, non-cancelled)
+        parcel_revenue_q = select(func.sum(Parcel.fee_ghs)).where(
             Parcel.created_at >= day_start,
             Parcel.created_at < day_end,
         )
+        ticket_revenue_q = select(func.sum(Ticket.fare_ghs)).where(
+            Ticket.created_at >= day_start,
+            Ticket.created_at < day_end,
+            Ticket.status != TicketStatus.cancelled,
+        )
         if current_user.role == UserRole.company_admin:
-            revenue_q = revenue_q.where(Parcel.company_id == current_user.company_id)
-        revenue = (await db.execute(revenue_q)).scalar_one()
+            parcel_revenue_q = parcel_revenue_q.where(Parcel.company_id == current_user.company_id)
+            ticket_revenue_q = ticket_revenue_q.where(Ticket.company_id == current_user.company_id)
+        parcel_revenue = (await db.execute(parcel_revenue_q)).scalar_one()
+        ticket_revenue = (await db.execute(ticket_revenue_q)).scalar_one()
 
         days.append(
             DailyStatItem(
                 date=day_start.strftime("%Y-%m-%d"),
                 tickets_sold=tickets_count,
                 parcels_created=parcels_count,
-                revenue_ghs=round(float(revenue or 0), 2),
+                revenue_ghs=round(float(parcel_revenue or 0) + float(ticket_revenue or 0), 2),
             )
         )
 
@@ -848,6 +877,7 @@ class AdminStatsResponse(BaseModel):
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     """Platform-wide metrics for the super_admin dashboard."""
     from app.models.parcel import Parcel
+    from app.models.ticket import Ticket, TicketStatus
 
     today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
@@ -870,10 +900,20 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
         )
     ).scalar_one()
 
-    revenue_today = (
+    parcel_revenue_today = (
         await db.execute(
             select(func.sum(Parcel.fee_ghs)).where(
                 Parcel.created_at >= today_start, Parcel.created_at < tomorrow_start
+            )
+        )
+    ).scalar_one()
+
+    ticket_revenue_today = (
+        await db.execute(
+            select(func.sum(Ticket.fare_ghs)).where(
+                Ticket.created_at >= today_start,
+                Ticket.created_at < tomorrow_start,
+                Ticket.status != TicketStatus.cancelled,
             )
         )
     ).scalar_one()
@@ -882,7 +922,7 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
         companies=companies_count,
         active_trips=active_trips_count,
         parcels_today=parcels_today_count,
-        revenue_today_ghs=float(revenue_today or 0),
+        revenue_today_ghs=float(parcel_revenue_today or 0) + float(ticket_revenue_today or 0),
     )
 
 
@@ -1316,6 +1356,8 @@ class BillingOverrideRequest(BaseModel):
     subscription_status: str | None = None
     current_period_end: datetime | None = None
     subscription_plan_id: int | None = None
+    billing_mode: str | None = None  # "subscription" | "per_transaction"
+    transaction_fee_pct: float | None = None
 
 
 @router.get(
@@ -1343,6 +1385,12 @@ async def get_company_billing(company_id: int, db: AsyncSession = Depends(get_db
         "current_period_end": company.current_period_end,
         "has_payment_method": bool(company.paystack_auth_code),
         "has_subaccount": bool(company.paystack_subaccount_code),
+        "billing_mode": company.billing_mode,
+        "transaction_fee_pct": (
+            float(company.transaction_fee_pct)
+            if company.transaction_fee_pct is not None
+            else None
+        ),
     }
 
 
@@ -1355,13 +1403,20 @@ async def override_company_billing(
     body: BillingOverrideRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """super_admin: manually override subscription status or period end (e.g. extend trial)."""
+    """super_admin: manually override subscription status, period end, or billing mode."""
     VALID_STATUSES = {"trialing", "active", "grace", "suspended", "cancelled"}
     if body.subscription_status and body.subscription_status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status. Must be one of: {VALID_STATUSES}",
         )
+    if body.billing_mode and body.billing_mode not in _VALID_BILLING_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"billing_mode must be one of: {_VALID_BILLING_MODES}",
+        )
+    if body.transaction_fee_pct is not None and body.transaction_fee_pct < 0:
+        raise HTTPException(status_code=400, detail="transaction_fee_pct must be non-negative")
 
     result = await db.execute(select(Company).where(Company.id == company_id))
     company = result.scalar_one_or_none()
@@ -1374,6 +1429,10 @@ async def override_company_billing(
         company.current_period_end = body.current_period_end
     if body.subscription_plan_id is not None:
         company.subscription_plan_id = body.subscription_plan_id
+    if body.billing_mode is not None:
+        company.billing_mode = body.billing_mode
+    if body.transaction_fee_pct is not None:
+        company.transaction_fee_pct = body.transaction_fee_pct  # type: ignore[assignment]
 
     db.add(company)
     await db.commit()
@@ -1384,18 +1443,11 @@ async def override_company_billing(
 
 
 class PlatformConfigResponse(BaseModel):
-    billing_mode: str
-    ticket_fee_ghs: float
-    parcel_fee_ghs: float
+    default_fee_pct: float
 
 
 class PlatformConfigUpdate(BaseModel):
-    billing_mode: str | None = None  # "subscription" | "per_transaction"
-    ticket_fee_ghs: float | None = None
-    parcel_fee_ghs: float | None = None
-
-
-_VALID_BILLING_MODES = {"subscription", "per_transaction"}
+    default_fee_pct: float | None = None
 
 
 @router.get(
@@ -1404,15 +1456,11 @@ _VALID_BILLING_MODES = {"subscription", "per_transaction"}
     dependencies=[Depends(require_role(UserRole.super_admin))],
 )
 async def get_platform_config_endpoint(db: AsyncSession = Depends(get_db)):
-    """Return the current platform-wide billing configuration."""
+    """Return the platform-wide default per-transaction fee percentage."""
     from app.services.transaction_fee_service import get_platform_config
 
     config = await get_platform_config(db)
-    return PlatformConfigResponse(
-        billing_mode=config.billing_mode,
-        ticket_fee_ghs=float(config.ticket_fee_ghs),
-        parcel_fee_ghs=float(config.parcel_fee_ghs),
-    )
+    return PlatformConfigResponse(default_fee_pct=float(config.default_fee_pct))
 
 
 @router.patch(
@@ -1424,41 +1472,25 @@ async def update_platform_config(
     body: PlatformConfigUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update platform billing mode and/or per-transaction fee amounts."""
+    """Update the platform-wide default per-transaction fee percentage."""
     from app.services.transaction_fee_service import (
         get_platform_config,
         invalidate_config_cache,
     )
 
-    if body.billing_mode is not None and body.billing_mode not in _VALID_BILLING_MODES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"billing_mode must be one of: {_VALID_BILLING_MODES}",
-        )
-    if body.ticket_fee_ghs is not None and body.ticket_fee_ghs < 0:
-        raise HTTPException(status_code=400, detail="ticket_fee_ghs must be non-negative")
-    if body.parcel_fee_ghs is not None and body.parcel_fee_ghs < 0:
-        raise HTTPException(status_code=400, detail="parcel_fee_ghs must be non-negative")
+    if body.default_fee_pct is not None and body.default_fee_pct < 0:
+        raise HTTPException(status_code=400, detail="default_fee_pct must be non-negative")
 
     config = await get_platform_config(db)
-    if body.billing_mode is not None:
-        config.billing_mode = body.billing_mode
-    if body.ticket_fee_ghs is not None:
-        config.ticket_fee_ghs = body.ticket_fee_ghs  # type: ignore[assignment]
-    if body.parcel_fee_ghs is not None:
-        config.parcel_fee_ghs = body.parcel_fee_ghs  # type: ignore[assignment]
+    if body.default_fee_pct is not None:
+        config.default_fee_pct = body.default_fee_pct  # type: ignore[assignment]
     db.add(config)
     await db.commit()
     await db.refresh(config)
 
-    # Invalidate in-process cache so next requests pick up the new values
     invalidate_config_cache()
 
-    return PlatformConfigResponse(
-        billing_mode=config.billing_mode,
-        ticket_fee_ghs=float(config.ticket_fee_ghs),
-        parcel_fee_ghs=float(config.parcel_fee_ghs),
-    )
+    return PlatformConfigResponse(default_fee_pct=float(config.default_fee_pct))
 
 
 # ── Per-transaction fee summaries (super_admin only) ──────────────────────────
@@ -1584,6 +1616,183 @@ async def get_platform_transaction_fee_summary(db: AsyncSession = Depends(get_db
         )
         for row in rows.all()
     ]
+
+
+# ── Financial tracking: revenue by payment method + platform fees owed ────────
+# (super_admin only) — this is how the platform tracks what it's actually owed:
+# card/MoMo sales route the platform's cut automatically through Paystack's
+# transaction_charge split, but cash sales never touch Paystack, so their fee
+# is recorded in TransactionFee ("pending") and collected later by the daily
+# sweeper against the company's saved card. This view makes that visible.
+
+
+class PaymentMethodBreakdown(BaseModel):
+    cash_ghs: float
+    momo_ghs: float
+    card_ghs: float
+    online_ghs: float
+    total_ghs: float
+
+
+class CompanyFinancialsSummary(BaseModel):
+    billing_mode: str
+    transaction_fee_pct: float
+    tickets: PaymentMethodBreakdown
+    parcels: PaymentMethodBreakdown
+    platform_fees_pending_ghs: float
+    platform_fees_charged_ghs: float
+
+
+async def _payment_method_breakdown_tickets(
+    db: AsyncSession, company_id: int
+) -> PaymentMethodBreakdown:
+    from app.models.ticket import Ticket, TicketStatus
+
+    rows = await db.execute(
+        select(Ticket.payment_method, func.sum(Ticket.fare_ghs).label("total"))
+        .where(Ticket.company_id == company_id, Ticket.status != TicketStatus.cancelled)
+        .group_by(Ticket.payment_method)
+    )
+    by_method = {row.payment_method: float(row.total or 0) for row in rows.all()}
+    cash = by_method.get("cash", 0.0)
+    momo = by_method.get("momo", 0.0)
+    card = by_method.get("card", 0.0)
+    online = by_method.get("online", 0.0)
+    return PaymentMethodBreakdown(
+        cash_ghs=cash,
+        momo_ghs=momo,
+        card_ghs=card,
+        online_ghs=online,
+        total_ghs=sum(by_method.values()),
+    )
+
+
+async def _payment_method_breakdown_parcels(
+    db: AsyncSession, company_id: int
+) -> PaymentMethodBreakdown:
+    from app.models.parcel import Parcel
+
+    rows = await db.execute(
+        select(Parcel.fee_payment_status, func.sum(Parcel.fee_ghs).label("total"))
+        .where(Parcel.company_id == company_id)
+        .group_by(Parcel.fee_payment_status)
+    )
+    by_status = {row.fee_payment_status: float(row.total or 0) for row in rows.all()}
+    cash = by_status.get("cash", 0.0)
+    momo = by_status.get("momo_pending", 0.0) + by_status.get("paid", 0.0)
+    return PaymentMethodBreakdown(
+        cash_ghs=cash,
+        momo_ghs=momo,
+        card_ghs=0.0,
+        online_ghs=0.0,
+        total_ghs=cash + momo + by_status.get("failed", 0.0),
+    )
+
+
+@router.get(
+    "/companies/{company_id}/financials",
+    response_model=CompanyFinancialsSummary,
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_company_financials(company_id: int, db: AsyncSession = Depends(get_db)):
+    """super_admin: revenue by payment method + platform fees owed for one company."""
+    from app.models.transaction_fee import TransactionFee
+    from app.services.transaction_fee_service import effective_fee_pct, get_platform_config
+
+    company_result = await db.execute(select(Company).where(Company.id == company_id))
+    company = company_result.scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    platform = await get_platform_config(db)
+    pct = effective_fee_pct(company, platform)
+
+    tickets = await _payment_method_breakdown_tickets(db, company_id)
+    parcels = await _payment_method_breakdown_parcels(db, company_id)
+
+    pending_result = await db.execute(
+        select(func.sum(TransactionFee.amount_ghs)).where(
+            TransactionFee.company_id == company_id, TransactionFee.status == "pending"
+        )
+    )
+    charged_result = await db.execute(
+        select(func.sum(TransactionFee.amount_ghs)).where(
+            TransactionFee.company_id == company_id, TransactionFee.status == "charged"
+        )
+    )
+
+    return CompanyFinancialsSummary(
+        billing_mode=company.billing_mode,
+        transaction_fee_pct=float(pct),
+        tickets=tickets,
+        parcels=parcels,
+        platform_fees_pending_ghs=float(pending_result.scalar_one() or 0),
+        platform_fees_charged_ghs=float(charged_result.scalar_one() or 0),
+    )
+
+
+class PlatformFinancialsRow(BaseModel):
+    company_id: int
+    company_name: str
+    billing_mode: str
+    tickets_cash_ghs: float
+    tickets_momo_ghs: float
+    tickets_online_ghs: float
+    parcels_cash_ghs: float
+    parcels_momo_ghs: float
+    total_revenue_ghs: float
+    platform_fees_pending_ghs: float
+    platform_fees_charged_ghs: float
+
+
+@router.get(
+    "/financials/summary",
+    response_model=list[PlatformFinancialsRow],
+    dependencies=[Depends(require_role(UserRole.super_admin))],
+)
+async def get_platform_financials_summary(db: AsyncSession = Depends(get_db)):
+    """super_admin: platform-wide revenue by payment method + fees owed, per company."""
+    from sqlalchemy import case
+
+    from app.models.transaction_fee import TransactionFee
+
+    companies_result = await db.execute(select(Company).order_by(Company.name))
+    companies = companies_result.scalars().all()
+
+    fee_rows = await db.execute(
+        select(
+            TransactionFee.company_id,
+            func.sum(
+                case((TransactionFee.status == "pending", TransactionFee.amount_ghs), else_=0)
+            ).label("pending_ghs"),
+            func.sum(
+                case((TransactionFee.status == "charged", TransactionFee.amount_ghs), else_=0)
+            ).label("charged_ghs"),
+        ).group_by(TransactionFee.company_id)
+    )
+    fees_by_company = {row.company_id: row for row in fee_rows.all()}
+
+    output = []
+    for company in companies:
+        tickets = await _payment_method_breakdown_tickets(db, company.id)
+        parcels = await _payment_method_breakdown_parcels(db, company.id)
+        fee_row = fees_by_company.get(company.id)
+        output.append(
+            PlatformFinancialsRow(
+                company_id=company.id,
+                company_name=company.name,
+                billing_mode=company.billing_mode,
+                tickets_cash_ghs=tickets.cash_ghs,
+                tickets_momo_ghs=tickets.momo_ghs,
+                tickets_online_ghs=tickets.online_ghs,
+                parcels_cash_ghs=parcels.cash_ghs,
+                parcels_momo_ghs=parcels.momo_ghs,
+                total_revenue_ghs=tickets.total_ghs + parcels.total_ghs,
+                platform_fees_pending_ghs=float(fee_row.pending_ghs) if fee_row else 0.0,
+                platform_fees_charged_ghs=float(fee_row.charged_ghs) if fee_row else 0.0,
+            )
+        )
+    return output
 
 
 # ── Company activity endpoints (super_admin only) ─────────────────────────────
@@ -1768,7 +1977,7 @@ async def get_company_activity_stats(
 ):
     """super_admin: quick activity stats for a single company."""
     from app.models.parcel import Parcel
-    from app.models.ticket import Ticket
+    from app.models.ticket import Ticket, TicketStatus
 
     company_result = await db.execute(select(Company).where(Company.id == company_id))
     if company_result.scalar_one_or_none() is None:
@@ -1818,7 +2027,7 @@ async def get_company_activity_stats(
         )
     ).scalar_one()
 
-    revenue_today = (
+    parcel_revenue_today = (
         await db.execute(
             select(func.sum(Parcel.fee_ghs)).where(
                 Parcel.company_id == company_id,
@@ -1828,10 +2037,21 @@ async def get_company_activity_stats(
         )
     ).scalar_one()
 
+    ticket_revenue_today = (
+        await db.execute(
+            select(func.sum(Ticket.fare_ghs)).where(
+                Ticket.company_id == company_id,
+                Ticket.created_at >= today_start,
+                Ticket.created_at < tomorrow_start,
+                Ticket.status != TicketStatus.cancelled,
+            )
+        )
+    ).scalar_one()
+
     return CompanyActivityStats(
         total_trips=total_trips,
         active_trips=active_trips,
         tickets_today=tickets_today,
         parcels_today=parcels_today,
-        revenue_ghs_today=float(revenue_today or 0),
+        revenue_ghs_today=float(parcel_revenue_today or 0) + float(ticket_revenue_today or 0),
     )

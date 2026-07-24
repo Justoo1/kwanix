@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -42,6 +43,15 @@ class Company(Base, TimestampMixin):
     bank_account_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
     bank_account_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bank_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # ── Per-company billing mode ────────────────────────────────────────────────
+    # "subscription" | "per_transaction"
+    billing_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="subscription", server_default="'subscription'"
+    )
+    # Percentage (e.g. 5.00 = 5%) charged on every ticket/parcel when billing_mode
+    # is "per_transaction". Null falls back to PlatformConfig.default_fee_pct.
+    transaction_fee_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
     # Relationships
     stations: Mapped[list["Station"]] = relationship(back_populates="company")  # noqa: F821

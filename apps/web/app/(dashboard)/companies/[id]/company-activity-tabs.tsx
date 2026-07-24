@@ -61,6 +61,23 @@ interface FeeSummary {
   invoices: FeeInvoice[];
 }
 
+interface PaymentMethodBreakdown {
+  cash_ghs: number;
+  momo_ghs: number;
+  card_ghs: number;
+  online_ghs: number;
+  total_ghs: number;
+}
+
+interface FinancialsSummary {
+  billing_mode: string;
+  transaction_fee_pct: number;
+  tickets: PaymentMethodBreakdown;
+  parcels: PaymentMethodBreakdown;
+  platform_fees_pending_ghs: number;
+  platform_fees_charged_ghs: number;
+}
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function TH({ children }: { children: React.ReactNode }) {
@@ -326,6 +343,85 @@ function ParcelsTab({ companyId }: { companyId: number }) {
   );
 }
 
+function FinancialsTab({ companyId }: { companyId: number }) {
+  const { data, isLoading } = useQuery<FinancialsSummary>({
+    queryKey: ["admin", "company-financials", companyId],
+    queryFn: () => clientFetch<FinancialsSummary>(`admin/companies/${companyId}/financials`),
+    staleTime: 60_000,
+  });
+
+  const isPerTx = data?.billing_mode === "per_transaction";
+
+  return (
+    <div className="space-y-4 pt-1">
+      {isPerTx && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+          Per-transaction billing at <span className="font-semibold">{data.transaction_fee_pct}%</span>.
+          Card/MoMo fees are deducted automatically; cash-sale fees are tracked below and collected
+          separately.
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">
+          Revenue by payment method
+        </p>
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+          <table className="w-full text-sm min-w-140">
+            <thead className="bg-zinc-50 border-b border-zinc-100">
+              <tr>
+                <TH>{""}</TH>
+                <TH>Cash</TH>
+                <TH>MoMo</TH>
+                <TH>Card</TH>
+                <TH>Online</TH>
+                <TH>Total</TH>
+              </tr>
+            </thead>
+            {isLoading ? (
+              <TableSkeleton cols={6} />
+            ) : (
+              <tbody className="divide-y divide-zinc-100">
+                <tr>
+                  <TD><span className="font-medium text-zinc-800">Tickets</span></TD>
+                  <TD>GHS {(data?.tickets.cash_ghs ?? 0).toFixed(2)}</TD>
+                  <TD>GHS {(data?.tickets.momo_ghs ?? 0).toFixed(2)}</TD>
+                  <TD>GHS {(data?.tickets.card_ghs ?? 0).toFixed(2)}</TD>
+                  <TD>GHS {(data?.tickets.online_ghs ?? 0).toFixed(2)}</TD>
+                  <TD><span className="font-semibold">GHS {(data?.tickets.total_ghs ?? 0).toFixed(2)}</span></TD>
+                </tr>
+                <tr>
+                  <TD><span className="font-medium text-zinc-800">Parcels</span></TD>
+                  <TD>GHS {(data?.parcels.cash_ghs ?? 0).toFixed(2)}</TD>
+                  <TD>GHS {(data?.parcels.momo_ghs ?? 0).toFixed(2)}</TD>
+                  <TD>—</TD>
+                  <TD>—</TD>
+                  <TD><span className="font-semibold">GHS {(data?.parcels.total_ghs ?? 0).toFixed(2)}</span></TD>
+                </tr>
+              </tbody>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {isPerTx && (
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard
+            label="Platform fees owed (pending)"
+            value={data ? `GHS ${data.platform_fees_pending_ghs.toFixed(2)}` : "GHS 0.00"}
+            isLoading={isLoading}
+          />
+          <StatCard
+            label="Platform fees collected"
+            value={data ? `GHS ${data.platform_fees_charged_ghs.toFixed(2)}` : "GHS 0.00"}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeesTab({ companyId }: { companyId: number }) {
   const { data, isLoading } = useQuery<FeeSummary>({
     queryKey: ["admin", "company-fees", companyId],
@@ -394,14 +490,15 @@ function FeesTab({ companyId }: { companyId: number }) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "trips" | "tickets" | "parcels" | "fees";
+type Tab = "overview" | "trips" | "tickets" | "parcels" | "financials" | "fees";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "trips",    label: "Trips" },
-  { id: "tickets",  label: "Tickets" },
-  { id: "parcels",  label: "Parcels" },
-  { id: "fees",     label: "Fees" },
+  { id: "overview",    label: "Overview" },
+  { id: "trips",       label: "Trips" },
+  { id: "tickets",     label: "Tickets" },
+  { id: "parcels",     label: "Parcels" },
+  { id: "financials",  label: "Financials" },
+  { id: "fees",        label: "Fee Invoices" },
 ];
 
 interface Props {
@@ -431,11 +528,12 @@ export default function CompanyActivityTabs({ companyId }: Props) {
       </div>
 
       {/* Tab content */}
-      {activeTab === "overview" && <OverviewTab companyId={companyId} />}
-      {activeTab === "trips"    && <TripsTab    companyId={companyId} />}
-      {activeTab === "tickets"  && <TicketsTab  companyId={companyId} />}
-      {activeTab === "parcels"  && <ParcelsTab  companyId={companyId} />}
-      {activeTab === "fees"     && <FeesTab     companyId={companyId} />}
+      {activeTab === "overview"   && <OverviewTab    companyId={companyId} />}
+      {activeTab === "trips"      && <TripsTab       companyId={companyId} />}
+      {activeTab === "tickets"    && <TicketsTab     companyId={companyId} />}
+      {activeTab === "parcels"    && <ParcelsTab     companyId={companyId} />}
+      {activeTab === "financials" && <FinancialsTab  companyId={companyId} />}
+      {activeTab === "fees"       && <FeesTab        companyId={companyId} />}
     </div>
   );
 }

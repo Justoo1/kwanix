@@ -223,13 +223,17 @@ async def create_parcel(
     await db.refresh(parcel, ["origin_station", "destination_station"])
 
     from app.services.transaction_fee_service import (  # noqa: PLC0415
+        compute_fee_ghs,
+        effective_fee_pct,
         get_platform_config,
         schedule_fee_record,
     )
 
-    platform = await get_platform_config(db)
-    if platform.billing_mode == "per_transaction" and current_user.company_id:
-        schedule_fee_record(current_user.company_id, "parcel", parcel.id, platform.parcel_fee_ghs)
+    if company_obj is not None and company_obj.billing_mode == "per_transaction":
+        platform = await get_platform_config(db)
+        pct = effective_fee_pct(company_obj, platform)
+        fee_ghs = compute_fee_ghs(parcel.fee_ghs, pct)
+        schedule_fee_record(current_user.company_id, "parcel", parcel.id, fee_ghs)
 
     # SMS in background — also persists outcome to sms_logs
     background_tasks.add_task(
@@ -291,7 +295,11 @@ async def initiate_parcel_momo_payment(
 
     from app.integrations.paystack import charge_mobile_money  # noqa: PLC0415
     from app.models.transaction_fee import TransactionFee  # noqa: PLC0415
-    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
+    from app.services.transaction_fee_service import (  # noqa: PLC0415
+        compute_fee_ghs,
+        effective_fee_pct,
+        get_platform_config,
+    )
     from app.utils.phone import detect_momo_provider, normalize_gh_phone  # noqa: PLC0415
 
     result = await db.execute(
@@ -325,14 +333,15 @@ async def initiate_parcel_momo_payment(
     company_result = await db.execute(select(Company).where(Company.id == parcel.company_id))
     company = company_result.scalar_one_or_none()
 
-    platform = await get_platform_config(db)
     platform_fee_pesewas: int | None = None
     if (
-        platform.billing_mode == "per_transaction"
-        and company is not None
+        company is not None
+        and company.billing_mode == "per_transaction"
         and company.paystack_subaccount_code
     ):
-        platform_fee_pesewas = int(platform.parcel_fee_ghs * 100)
+        platform = await get_platform_config(db)
+        pct = effective_fee_pct(company, platform)
+        platform_fee_pesewas = int(compute_fee_ghs(parcel.fee_ghs, pct) * 100)
 
     reference = f"KX-PAR-{parcel.id}-{uuid4().hex[:8]}"
     email = f"{phone_normalized}@kwanix.app"
