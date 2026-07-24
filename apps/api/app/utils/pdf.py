@@ -8,6 +8,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.services.pickup_service import resolve_pickup
+
 
 def generate_manifest_pdf(
     trip: object,
@@ -43,6 +45,22 @@ def generate_manifest_pdf(
         f"Status: {trip.status}",
     ]:
         elements.append(Paragraph(line, styles["Normal"]))
+
+    stops = sorted(
+        list(getattr(trip, "stops", []) or []),
+        key=lambda s: s.sequence_order,
+    )
+    if stops:
+        stop_descriptions = []
+        for s in stops:
+            station_name = getattr(getattr(s, "station", None), "name", "?")
+            if s.eta:
+                stop_descriptions.append(f"{station_name} (ETA {s.eta.strftime('%H:%M')})")
+            else:
+                stop_descriptions.append(station_name)
+        stops_line = f"Route Stops: {' → '.join(stop_descriptions)}"
+        elements.append(Paragraph(stops_line, styles["Normal"]))
+
     elements.append(Spacer(1, 0.6 * cm))
 
     tickets = sorted(
@@ -50,18 +68,23 @@ def generate_manifest_pdf(
         key=lambda t: t.seat_number,
     )
     if tickets:
-        table_data = [["Seat", "Passenger Name", "Phone", "Fare (GHS)"]]
+        table_data = [["Seat", "Passenger Name", "Phone", "Pickup Point", "Fare (GHS)"]]
         for t in tickets:
+            pickup_name, pickup_time = resolve_pickup(t, trip)
+            pickup_str = pickup_name or "—"
+            if pickup_time:
+                pickup_str += f" ({pickup_time.strftime('%H:%M')})"
             table_data.append(
                 [
                     str(t.seat_number),
                     t.passenger_name,
                     t.passenger_phone,
+                    pickup_str,
                     f"{float(t.fare_ghs):.2f}",
                 ]
             )
 
-        col_widths = [2 * cm, 7 * cm, 5 * cm, 3.5 * cm]
+        col_widths = [1.5 * cm, 5.5 * cm, 4 * cm, 4.5 * cm, 2.5 * cm]
         table = Table(table_data, colWidths=col_widths)
         header_color = colors.HexColor(brand_color) if brand_color else colors.darkblue
         table.setStyle(

@@ -16,6 +16,8 @@ interface PublicTicket {
   vehicle_plate: string | null;
   company_name: string | null;
   brand_color: string | null;
+  pickup_station: string | null;
+  pickup_time: string | null;
 }
 
 export async function generateMetadata({
@@ -87,6 +89,11 @@ export default async function PublicTicketPage({
   const timeStr = departure
     ? departure.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })
     : "—";
+
+  const pickupTime = ticket.pickup_time ? new Date(ticket.pickup_time) : null;
+  const pickupTimeStr = pickupTime
+    ? pickupTime.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })
+    : null;
 
   const bars = barcodeStripes(ticket.id);
   const isPaid = ticket.payment_status === "paid";
@@ -167,6 +174,17 @@ export default async function PublicTicketPage({
           <InfoBox label="Time" value={timeStr} accent={accent} />
           <InfoBox label="Bus No." value={ticket.vehicle_plate ?? "—"} accent={accent} />
           <InfoBox label="Fare" value={`GHS ${Number(ticket.fare_ghs).toFixed(2)}`} accent={accent} />
+          <div className="col-span-2">
+            <InfoBox
+              label="Pickup Point"
+              value={
+                ticket.pickup_station
+                  ? `${ticket.pickup_station}${pickupTimeStr ? ` · ${pickupTimeStr}` : ""}`
+                  : "—"
+              }
+              accent={accent}
+            />
+          </div>
           <div className="col-span-2">
             <InfoBox label="Passenger" value={ticket.passenger_name} accent={accent} />
           </div>

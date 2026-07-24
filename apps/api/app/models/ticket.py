@@ -61,8 +61,15 @@ class Ticket(Base, TimestampMixin):
     )
     refund_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
     eta_sms_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pickup_station_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("stations.id", ondelete="SET NULL"), nullable=True
+    )
+    tracking_link_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     trip: Mapped["Trip"] = relationship(back_populates="tickets")  # noqa: F821
     created_by: Mapped["User | None"] = relationship()  # noqa: F821
     payment_events: Mapped[list["PaymentEvent"]] = relationship(back_populates="ticket")  # noqa: F821
+    pickup_station: Mapped["Station | None"] = relationship()  # noqa: F821

@@ -11,9 +11,10 @@ from app.config import settings
 from app.dependencies.auth import get_db_for_user, require_role
 from app.integrations import arkesel
 from app.models.ticket import Ticket, TicketStatus
-from app.models.trip import Trip, TripStatus
+from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
 from app.models.vehicle import Vehicle
+from app.services.pickup_service import resolve_pickup
 
 router = APIRouter()
 
@@ -26,6 +27,12 @@ _GPS_AVG_SPEED_KMH = 80.0  # used for ETA estimation
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 
+class DriverStopResponse(BaseModel):
+    station_id: int
+    station_name: str
+    eta: datetime | None
+
+
 class DriverTripResponse(BaseModel):
     id: int
     departure_station_name: str
@@ -35,6 +42,7 @@ class DriverTripResponse(BaseModel):
     vehicle_plate: str
     passenger_count: int
     location_broadcast_enabled: bool
+    stops: list[DriverStopResponse]
 
 
 class DriverPassengerResponse(BaseModel):
@@ -44,6 +52,8 @@ class DriverPassengerResponse(BaseModel):
     passenger_phone: str
     status: str
     payment_status: str
+    pickup_station: str | None = None
+    pickup_time: datetime | None = None
 
 
 class ScanTicketRequest(BaseModel):
@@ -99,6 +109,7 @@ async def _get_driver_active_trip(
             selectinload(Trip.departure_station),
             selectinload(Trip.destination_station),
             selectinload(Trip.tickets),
+            selectinload(Trip.stops).selectinload(TripStop.station),
         )
         .order_by(Trip.departure_time.asc())
         .limit(1)
@@ -219,6 +230,14 @@ async def get_my_trip(
         location_broadcast_enabled=(
             trip.vehicle.location_broadcast_enabled if trip.vehicle else False
         ),
+        stops=[
+            DriverStopResponse(
+                station_id=s.station_id,
+                station_name=s.station.name if s.station else "",
+                eta=s.eta,
+            )
+            for s in trip.stops
+        ],
     )
 
 
@@ -242,17 +261,22 @@ async def get_my_passengers(
     )
     tickets = tickets_result.scalars().all()
 
-    return [
-        DriverPassengerResponse(
-            ticket_id=t.id,
-            seat_number=t.seat_number,
-            passenger_name=t.passenger_name,
-            passenger_phone=t.passenger_phone,
-            status=t.status.value,
-            payment_status=t.payment_status.value,
+    result = []
+    for t in tickets:
+        pickup_station, pickup_time = resolve_pickup(t, trip)
+        result.append(
+            DriverPassengerResponse(
+                ticket_id=t.id,
+                seat_number=t.seat_number,
+                passenger_name=t.passenger_name,
+                passenger_phone=t.passenger_phone,
+                status=t.status.value,
+                payment_status=t.payment_status.value,
+                pickup_station=pickup_station,
+                pickup_time=pickup_time,
+            )
         )
-        for t in tickets
-    ]
+    return result
 
 
 @router.post("/scan", response_model=ScanTicketResponse)

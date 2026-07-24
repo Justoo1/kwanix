@@ -56,3 +56,43 @@ export async function toggleBookingOpen(
   revalidatePath("/trips");
   return {};
 }
+
+export type AddStopState = { error?: string } | undefined;
+
+export async function addTripStop(
+  tripId: number,
+  _prev: AddStopState,
+  formData: FormData
+): Promise<AddStopState> {
+  const stationId = formData.get("station_id") as string;
+  const etaTime = formData.get("eta_time") as string; // HH:MM, optional
+  const departureDateIso = formData.get("departure_date_iso") as string;
+
+  if (!stationId) {
+    return { error: "Please select a station." };
+  }
+
+  let eta: string | undefined;
+  if (etaTime) {
+    const [h, m] = etaTime.split(":").map(Number);
+    const dt = new Date(departureDateIso);
+    dt.setHours(h, m, 0, 0);
+    eta = dt.toISOString();
+  }
+
+  try {
+    await apiFetch(`/api/v1/trips/${tripId}/stops`, {
+      method: "POST",
+      body: JSON.stringify({
+        station_id: Number(stationId),
+        sequence_order: Number(formData.get("sequence_order")),
+        eta,
+      }),
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to add stop.";
+    return { error: msg };
+  }
+  revalidatePath(`/trips/${tripId}`);
+  return {};
+}

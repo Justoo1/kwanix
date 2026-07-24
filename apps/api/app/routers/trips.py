@@ -40,6 +40,7 @@ _TRIP_OPTS = [
     selectinload(Trip.parcels),
     selectinload(Trip.tickets),
     selectinload(Trip.driver),
+    selectinload(Trip.stops).selectinload(TripStop.station),
 ]
 
 
@@ -343,6 +344,7 @@ async def get_trip_manifest(
             selectinload(Trip.departure_station),
             selectinload(Trip.destination_station),
             selectinload(Trip.tickets),
+            selectinload(Trip.stops).selectinload(TripStop.station),
         )
     )
     trip = result.scalar_one_or_none()

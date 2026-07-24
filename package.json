@@ -1,0 +1,7 @@
+{
+  "name": "routpass",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}
