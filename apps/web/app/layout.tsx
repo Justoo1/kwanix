@@ -5,7 +5,6 @@ import "./globals.css";
 
 import { QueryProvider } from "@/components/providers/query-provider";
 import { NetworkProvider } from "@/components/providers/network-provider";
-import { PwaRegister } from "@/components/pwa-register";
 
 const dmSans = DM_Sans({
   variable: "--font-sans",
@@ -54,7 +53,6 @@ export default function RootLayout({
         <NetworkProvider>
           <QueryProvider>{children}</QueryProvider>
           <Toaster position="top-right" richColors closeButton />
-          <PwaRegister />
         </NetworkProvider>
       </body>
     </html>
