@@ -33,7 +33,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
           isOnline ? "-translate-y-full" : "translate-y-0",
         ].join(" ")}
       >
-        Offline — Connection Unstable. Cached data may be shown.
+        Offline — Connection Unstable. Some features may not work until you&apos;re back online.
       </div>
       {children}
     </>

@@ -1,38 +1,32 @@
-// Kwanix service worker — minimal shell cache for PWA install eligibility.
-// Caches the app shell on install; serves from cache when offline.
+// Kill switch: the previous version of this file cache-first-served "/"
+// forever under a cache name that never changed across deployments, so once
+// a browser had it installed, every visit re-served a stale page shell even
+// on a fine connection — the old page's hashed CSS/JS then 404'd against
+// newer deployments, leaving users stuck on a broken unstyled page until
+// they knew to hard-refresh.
+//
+// This version replaces it for anyone who already has the old worker
+// installed: it wipes every cache, unregisters itself, and reloads any open
+// tabs so they fall back to plain network requests — no more offline
+// shell-caching. Nothing registers a new service worker going forward
+// (see components/pwa-register.tsx), so this file can be deleted entirely
+// once existing installs have had a chance to pick up this version.
 
-const CACHE = "kwanix-v1";
-// Only cache public, unauthenticated pages.
-// /dashboard and /login redirect depending on auth state — caching them
-// causes "site can't be reached" errors when the SW serves a stale redirect.
-const SHELL = ["/"];
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL))
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  // Remove old caches from previous versions
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+      await self.registration.unregister();
 
-self.addEventListener("fetch", (event) => {
-  // Only handle GET requests for same-origin navigation
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-
-  event.respondWith(
-    caches.match(event.request).then(
-      (cached) => cached ?? fetch(event.request)
-    )
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const client of clients) {
+        client.navigate(client.url);
+      }
+    })()
   );
 });
