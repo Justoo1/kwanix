@@ -78,6 +78,8 @@ class SubscriptionStatusResponse(BaseModel):
     has_payment_method: bool
     has_subaccount: bool
     billing_email: str | None
+    billing_mode: str
+    transaction_fee_pct: float
 
 
 class SelectPlanRequest(BaseModel):
@@ -171,8 +173,11 @@ async def get_billing_status(
     current_user: User = Depends(require_role(UserRole.company_admin)),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.transaction_fee_service import effective_fee_pct, get_platform_config
+
     company = await _get_company_or_403(current_user, db)
     plan = company.subscription_plan
+    platform = await get_platform_config(db)
     return SubscriptionStatusResponse(
         subscription_status=company.subscription_status,
         plan_name=plan.name if plan else None,
@@ -183,6 +188,8 @@ async def get_billing_status(
         has_payment_method=bool(company.paystack_auth_code),
         has_subaccount=bool(company.paystack_subaccount_code),
         billing_email=company.billing_email,
+        billing_mode=company.billing_mode,
+        transaction_fee_pct=float(effective_fee_pct(company, platform)),
     )
 
 

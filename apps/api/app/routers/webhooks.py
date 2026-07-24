@@ -31,6 +31,7 @@ from app.models.ticket import PaymentStatus, Ticket
 from app.models.trip import Trip
 from app.models.webhook_event import WebhookEvent
 from app.services.billing_service import _process_subscription_payment
+from app.services.transaction_fee_service import record_ticket_fee
 
 logger = structlog.get_logger()
 
@@ -141,6 +142,11 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
             )
             company_obj = company_result.scalar_one_or_none()
 
+            # Record the platform's cut for per_transaction companies — as
+            # already "charged" if a subaccount split took it in real time,
+            # or "pending" (owed, swept later) if there was no subaccount.
+            await record_ticket_fee(db, ticket, company_obj)
+
             # Email receipt to passenger (fire-and-forget)
             if ticket.passenger_email and trip_obj and company_obj:
                 route = f"{trip_obj.departure_station.name} → {trip_obj.destination_station.name}"
@@ -156,10 +162,10 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
                     company_name=company_obj.name,
                 )
         except Exception as exc:  # noqa: BLE001
-            # Email errors must never fail payment processing, but log
-            # them so Sentry surfaces delivery problems.
+            # Fee-recording/email errors must never fail payment processing,
+            # but log them so Sentry surfaces the problem.
             logger.warning(
-                "webhook.ticket_email_failed",
+                "webhook.ticket_post_payment_step_failed",
                 ticket_id=ticket.id,
                 error=str(exc),
             )

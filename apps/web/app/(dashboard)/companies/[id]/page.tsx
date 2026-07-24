@@ -16,6 +16,8 @@ interface CompanyBilling {
   current_period_end: string | null;
   has_payment_method: boolean;
   has_subaccount: boolean;
+  billing_mode: string;
+  transaction_fee_pct: number | null;
 }
 
 function fmt(iso: string | null) {
@@ -115,6 +117,30 @@ export default async function CompanyDetailPage({
               {billing.has_subaccount ? "✓ Linked" : "Not linked"}
             </p>
           </div>
+
+          <div>
+            <p className="text-zinc-400 text-xs uppercase tracking-wide mb-1">Billing mode</p>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                billing.billing_mode === "per_transaction"
+                  ? "bg-indigo-100 text-indigo-800"
+                  : "bg-zinc-100 text-zinc-600"
+              }`}
+            >
+              {billing.billing_mode === "per_transaction" ? "Per Transaction" : "Subscription"}
+            </span>
+          </div>
+
+          {billing.billing_mode === "per_transaction" && (
+            <div>
+              <p className="text-zinc-400 text-xs uppercase tracking-wide mb-1">Transaction fee</p>
+              <p className="text-zinc-800">
+                {billing.transaction_fee_pct != null
+                  ? `${billing.transaction_fee_pct}% (custom)`
+                  : "Platform default"}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -122,12 +148,14 @@ export default async function CompanyDetailPage({
       <div className="rounded-xl border border-zinc-200 bg-white p-6">
         <h2 className="text-base font-medium text-zinc-800 mb-1">Billing Override</h2>
         <p className="text-sm text-zinc-500 mb-4">
-          Manually adjust subscription status or extend the period. Use for support cases, trials, and corrections.
+          Manually adjust subscription status, billing mode, or extend the period. Use for support cases, trials, and corrections.
         </p>
         <BillingOverrideForm
           companyId={companyId}
           currentStatus={billing.subscription_status}
           currentPeriodEnd={billing.current_period_end}
+          currentBillingMode={billing.billing_mode}
+          currentTransactionFeePct={billing.transaction_fee_pct}
         />
       </div>
 

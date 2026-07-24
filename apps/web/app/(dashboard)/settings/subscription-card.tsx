@@ -26,6 +26,8 @@ interface SubscriptionStatus {
   has_payment_method: boolean;
   has_subaccount: boolean;
   billing_email: string | null;
+  billing_mode: "subscription" | "per_transaction";
+  transaction_fee_pct: number;
 }
 
 interface Plan {
@@ -204,54 +206,80 @@ export default function SubscriptionCard({
     }
   }
 
+  const isPerTransaction = billing.billing_mode === "per_transaction";
+
   return (
     <Card className="max-w-2xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-3">
           Subscription &amp; Billing
-          {statusBadge(billing.subscription_status)}
+          {isPerTransaction ? (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+              Pay as you go
+            </span>
+          ) : (
+            statusBadge(billing.subscription_status)
+          )}
         </CardTitle>
         <CardDescription>
-          Manage your Kwanix subscription plan and payment details.
+          {isPerTransaction
+            ? "Your account is billed per transaction — no subscription plan required."
+            : "Manage your Kwanix subscription plan and payment details."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
 
         {/* Status summary */}
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm space-y-1">
-          {billing.plan_name && (
-            <p><span className="font-medium">Plan:</span> {billing.plan_name} ({billing.billing_cycle})</p>
-          )}
-          {billing.subscription_status === "trialing" && trialDays !== null && (
-            <p className={trialDays <= 7 ? "text-amber-700 font-medium" : ""}>
-              Trial ends {fmt(billing.trial_ends_at)} ({trialDays} day{trialDays !== 1 ? "s" : ""} left)
+        {isPerTransaction ? (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm space-y-1 text-indigo-900">
+            <p>
+              Kwanix charges <span className="font-semibold">{billing.transaction_fee_pct}%</span> on
+              every ticket sold and parcel logged.
             </p>
-          )}
-          {billing.subscription_status === "active" && billing.current_period_end && (
-            <p className={isExpiringSoon ? "text-amber-700 font-medium" : ""}>
-              Next renewal: {fmt(billing.current_period_end)}
+            <p className="text-indigo-700">
+              Card and MoMo payments have this deducted automatically. Cash sales are tracked and
+              collected separately.
             </p>
-          )}
-          {billing.subscription_status === "grace" && (
-            <p className="text-amber-700 font-semibold">
-              Your subscription has expired. You have a 4-day grace period to pay before access is suspended.
-            </p>
-          )}
-          {billing.subscription_status === "suspended" && (
-            <p className="text-red-700 font-semibold">
-              Access suspended. Select a plan and pay below to reactivate.
-            </p>
-          )}
-          {billing.max_vehicles !== null && (
-            <p><span className="font-medium">Vehicle limit:</span> {billing.max_vehicles}</p>
-          )}
-          {billing.has_subaccount && (
-            <p className="text-emerald-700">✓ Bank account linked — ticket revenue flows directly to you</p>
-          )}
-        </div>
+            {billing.has_subaccount && (
+              <p className="text-emerald-700">✓ Bank account linked — the remainder flows directly to you</p>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm space-y-1">
+            {billing.plan_name && (
+              <p><span className="font-medium">Plan:</span> {billing.plan_name} ({billing.billing_cycle})</p>
+            )}
+            {billing.subscription_status === "trialing" && trialDays !== null && (
+              <p className={trialDays <= 7 ? "text-amber-700 font-medium" : ""}>
+                Trial ends {fmt(billing.trial_ends_at)} ({trialDays} day{trialDays !== 1 ? "s" : ""} left)
+              </p>
+            )}
+            {billing.subscription_status === "active" && billing.current_period_end && (
+              <p className={isExpiringSoon ? "text-amber-700 font-medium" : ""}>
+                Next renewal: {fmt(billing.current_period_end)}
+              </p>
+            )}
+            {billing.subscription_status === "grace" && (
+              <p className="text-amber-700 font-semibold">
+                Your subscription has expired. You have a 4-day grace period to pay before access is suspended.
+              </p>
+            )}
+            {billing.subscription_status === "suspended" && (
+              <p className="text-red-700 font-semibold">
+                Access suspended. Select a plan and pay below to reactivate.
+              </p>
+            )}
+            {billing.max_vehicles !== null && (
+              <p><span className="font-medium">Vehicle limit:</span> {billing.max_vehicles}</p>
+            )}
+            {billing.has_subaccount && (
+              <p className="text-emerald-700">✓ Bank account linked — ticket revenue flows directly to you</p>
+            )}
+          </div>
+        )}
 
         {/* Plan selector — shown when not active or when in grace/suspended */}
-        {billing.subscription_status !== "active" && plans && plans.length > 0 && (
+        {!isPerTransaction && billing.subscription_status !== "active" && plans && plans.length > 0 && (
           <div className="space-y-4">
             <p className="text-sm font-medium text-zinc-700">Choose a plan</p>
 
@@ -320,7 +348,7 @@ export default function SubscriptionCard({
         )}
 
         {/* Pay Now */}
-        {billing.plan_name !== null && billing.subscription_status !== "active" && (
+        {!isPerTransaction && billing.plan_name !== null && billing.subscription_status !== "active" && (
           <div className="flex items-center gap-3">
             <Button onClick={handlePayNow} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">
               {submitting ? "Processing…" : billing.has_payment_method ? "Pay Now" : "Set up payment & pay"}
@@ -346,7 +374,9 @@ export default function SubscriptionCard({
                 <div>
                   <p className="text-sm font-medium text-zinc-700">Link payout account</p>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Online ticket payments go 100% to this account. Kwanix only charges your subscription fee.
+                    {isPerTransaction
+                      ? `Online ticket payments go to this account, minus Kwanix's ${billing.transaction_fee_pct}% transaction fee.`
+                      : "Online ticket payments go 100% to this account. Kwanix only charges your subscription fee."}
                   </p>
                 </div>
 
@@ -449,7 +479,7 @@ export default function SubscriptionCard({
         )}
 
         {/* Cancel subscription */}
-        {billing.subscription_status === "active" && (
+        {!isPerTransaction && billing.subscription_status === "active" && (
           <button
             onClick={handleCancel}
             disabled={submitting}
