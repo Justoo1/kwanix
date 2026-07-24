@@ -6,6 +6,12 @@ import { clientFetch } from "@/lib/client-api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface DriverStop {
+  station_id: number;
+  station_name: string;
+  eta: string | null;
+}
+
 export interface DriverTripData {
   id: number;
   departure_station_name: string;
@@ -15,6 +21,7 @@ export interface DriverTripData {
   vehicle_plate: string;
   passenger_count: number;
   location_broadcast_enabled: boolean;
+  stops: DriverStop[];
 }
 
 export interface DriverPassenger {
@@ -24,6 +31,8 @@ export interface DriverPassenger {
   passenger_phone: string;
   status: string;
   payment_status: string;
+  pickup_station: string | null;
+  pickup_time: string | null;
 }
 
 export interface DriverScanResult {

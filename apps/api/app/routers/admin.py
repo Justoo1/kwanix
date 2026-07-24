@@ -16,8 +16,8 @@ import traceback
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,11 +27,11 @@ from app.dependencies.auth import require_role
 from app.integrations.email import send_sla_report_email
 from app.models.company import Company
 from app.models.subscription import SubscriptionPlan
-from app.models.ticket import TicketStatus
 from app.models.trip import Trip, TripStatus
 from app.models.user import User, UserRole
 from app.models.webhook_event import WebhookEvent
 from app.services.auth_service import hash_password
+from app.utils.phone import normalize_gh_phone
 
 router = APIRouter()
 
@@ -92,6 +92,14 @@ class UserCreate(BaseModel):
     role: UserRole
     station_id: int | None = None
     company_id: int | None = None  # required when called by super_admin
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, v: str) -> str:
+        try:
+            return normalize_gh_phone(v)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class UserResponse(BaseModel):
@@ -661,72 +669,21 @@ class SendRemindersResponse(BaseModel):
     dependencies=[Depends(require_role(UserRole.super_admin, UserRole.company_admin))],
 )
 async def send_trip_reminders(
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin, UserRole.company_admin)),
 ):
     """
-    Send SMS departure reminders for all scheduled trips departing within 2 hours.
+    Manually re-trigger SMS pickup/departure reminders for trips departing within the
+    reminder window (also runs automatically in the background — see
+    app.services.trip_reminder_service.run_trip_reminder_sweeper).
     Idempotent: skips tickets that already have reminder_sent_at set.
     """
-    from app.integrations.arkesel import dispatch_sms, msg_trip_reminder
+    from app.services.trip_reminder_service import send_due_reminders  # noqa: PLC0415
 
-    now = datetime.now(UTC)
-    window_end = now + timedelta(hours=2)
-
-    stmt = (
-        select(Trip)
-        .where(
-            Trip.status == TripStatus.scheduled,
-            Trip.departure_time >= now,
-            Trip.departure_time <= window_end,
-        )
-        .options(
-            selectinload(Trip.tickets),
-            selectinload(Trip.departure_station),
-            selectinload(Trip.destination_station),
-        )
-    )
     # company_admin: only their company's trips
-    if current_user.role == UserRole.company_admin:
-        stmt = stmt.where(Trip.company_id == current_user.company_id)
-
-    result = await db.execute(stmt)
-    trips = result.scalars().all()
-
-    reminders_sent = 0
-    now_ts = datetime.now(UTC)
-
-    for trip in trips:
-        try:
-            from_name = trip.departure_station.name
-            to_name = trip.destination_station.name
-        except Exception:
-            from_name = str(trip.departure_station_id)
-            to_name = str(trip.destination_station_id)
-
-        departure_str = trip.departure_time.strftime("%H:%M")
-
-        for ticket in trip.tickets:
-            if ticket.status == TicketStatus.cancelled:
-                continue
-            if ticket.reminder_sent_at is not None:
-                continue
-
-            ticket.reminder_sent_at = now_ts
-            message = msg_trip_reminder(ticket.passenger_name, from_name, to_name, departure_str)
-            background_tasks.add_task(
-                dispatch_sms,
-                db,
-                None,
-                ticket.passenger_phone,
-                message,
-                "trip_reminder",
-            )
-            reminders_sent += 1
-
-    await db.commit()
-    return SendRemindersResponse(reminders_sent=reminders_sent, trips_checked=len(trips))
+    company_id = current_user.company_id if current_user.role == UserRole.company_admin else None
+    reminders_sent, trips_checked = await send_due_reminders(db, company_id=company_id)
+    return SendRemindersResponse(reminders_sent=reminders_sent, trips_checked=trips_checked)
 
 
 # ── Trip occupancy rates (company_admin+) ─────────────────────────────────────

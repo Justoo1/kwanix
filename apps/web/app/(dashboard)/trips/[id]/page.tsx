@@ -22,6 +22,7 @@ import ManifestDownloadButton from "./manifest-download-button"
 import ManifestCsvButton from "./manifest-csv-button"
 import BulkCancelButton from "./bulk-cancel-button"
 import AssignDriverButton from "./assign-driver-button"
+import AddStopForm from "./add-stop-form"
 
 interface TripRevenue {
   total_revenue_ghs: number
@@ -284,40 +285,21 @@ export default async function TripDetailPage({
         </div>
       )}
 
-      {/* ── Trip stops ─────────────────────────────────────────────────── */}
+      {/* ── Trip stops / pickup points ──────────────────────────────────── */}
       {canManage && (
         <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-zinc-100">
             <h2 className="text-base font-medium text-zinc-800">
-              Route Stops
+              Route Stops / Pickup Points
               <span className="ml-2 text-sm font-normal text-zinc-400">
                 ({stops.length})
               </span>
             </h2>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Passengers can choose any of these (or the departure station) as their pickup point when booking online.
+            </p>
           </div>
-          {stops.length === 0 ? (
-            <div className="px-6 py-8 text-center">
-              <p className="text-sm text-zinc-400">No intermediate stops defined.</p>
-            </div>
-          ) : (
-            <ol className="divide-y divide-zinc-100">
-              {stops.map((stop) => (
-                <li key={stop.id} className="flex items-center gap-4 px-6 py-3">
-                  <span className="shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
-                    {stop.sequence_order}
-                  </span>
-                  <span className="flex-1 text-sm font-medium text-zinc-800">
-                    {stop.station_name ?? `Station #${stop.station_id}`}
-                  </span>
-                  {stop.eta && (
-                    <span className="text-xs text-zinc-400">
-                      ETA {new Date(stop.eta).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
+          <AddStopForm tripId={trip.id} departureTimeIso={trip.departure_time} stops={stops} />
         </div>
       )}
 

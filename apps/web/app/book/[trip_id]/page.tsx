@@ -7,6 +7,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+interface PickupOption {
+  station_id: number;
+  station_name: string;
+  pickup_time: string | null;
+}
+
 interface PublicTrip {
   id: number;
   departure_station_name: string;
@@ -19,6 +25,7 @@ interface PublicTrip {
   brand_color: string | null;
   booking_open: boolean;
   status: string;
+  pickup_options: PickupOption[];
 }
 
 interface SeatMap {
@@ -189,6 +196,7 @@ export default function BookTripPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [seat,  setSeat]  = useState<number | null>(null);
+  const [pickupStationId, setPickupStationId] = useState<number | null>(null);
 
   const [phoneError,  setPhoneError]  = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -199,7 +207,11 @@ export default function BookTripPage() {
       fetchPublic<PublicTrip>(`/api/v1/public/trips/${tripId}`),
       fetchPublic<SeatMap>(`/api/v1/public/trips/${tripId}/seats`),
     ])
-      .then(([t, sm]) => { setTrip(t); setSeatMap(sm); })
+      .then(([t, sm]) => {
+        setTrip(t);
+        setSeatMap(sm);
+        setPickupStationId(t.pickup_options[0]?.station_id ?? null);
+      })
       .catch((err: unknown) => {
         setLoadError(err instanceof Error ? err.message : "Failed to load trip.");
       })
@@ -224,6 +236,7 @@ export default function BookTripPage() {
           passenger_phone: phone,
           passenger_email: email || undefined,
           seat_number: seat,
+          pickup_station_id: pickupStationId ?? undefined,
         }),
       });
       window.location.href = data.authorization_url;
@@ -467,6 +480,41 @@ export default function BookTripPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Pickup point selection */}
+                  {trip.pickup_options.length > 1 && (
+                    <div>
+                      <h4 className="text-base font-black tracking-tight text-zinc-900 mb-3">
+                        Pickup Point
+                      </h4>
+                      <div className="space-y-2">
+                        {trip.pickup_options.map((opt) => (
+                          <button
+                            key={opt.station_id}
+                            type="button"
+                            onClick={() => setPickupStationId(opt.station_id)}
+                            className="w-full flex items-center justify-between rounded-2xl px-4 py-3.5 text-left transition-all"
+                            style={
+                              pickupStationId === opt.station_id
+                                ? { backgroundColor: `${color}12`, boxShadow: `0 0 0 2px ${color}` }
+                                : { backgroundColor: "#fafafa" }
+                            }
+                          >
+                            <span className="text-sm font-bold text-zinc-900">
+                              {opt.station_name}
+                            </span>
+                            {opt.pickup_time && (
+                              <span className="text-xs text-zinc-400 font-medium">
+                                {new Intl.DateTimeFormat("en-GH", { timeStyle: "short" }).format(
+                                  new Date(opt.pickup_time)
+                                )}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Passenger details */}
                   <div className="space-y-4">

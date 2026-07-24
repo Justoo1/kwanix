@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
+from app.integrations.arkesel import dispatch_sms, msg_live_tracking_link
 from app.integrations.email import send_ticket_email
 from app.integrations.paystack import verify_paystack_signature
 from app.middleware.rate_limit import limiter
@@ -124,42 +125,63 @@ async def _process_paystack_payload(payload: dict, db: AsyncSession) -> str:
         ticket.payment_status = PaymentStatus.paid
         ticket.booking_expires_at = None
 
-        # Email receipt to passenger in the background (fire-and-forget)
-        if ticket.passenger_email:
+        trip_obj = None
+        try:
+            trip_result = await db.execute(
+                select(Trip)
+                .where(Trip.id == ticket.trip_id)
+                .options(
+                    selectinload(Trip.departure_station),
+                    selectinload(Trip.destination_station),
+                )
+            )
+            trip_obj = trip_result.scalar_one_or_none()
+            company_result = await db.execute(
+                select(Company).where(Company.id == ticket.company_id)
+            )
+            company_obj = company_result.scalar_one_or_none()
+
+            # Email receipt to passenger (fire-and-forget)
+            if ticket.passenger_email and trip_obj and company_obj:
+                route = f"{trip_obj.departure_station.name} → {trip_obj.destination_station.name}"
+                departure_str = trip_obj.departure_time.strftime("%d %b %Y %H:%M")
+                await send_ticket_email(
+                    passenger_name=ticket.passenger_name,
+                    passenger_email=ticket.passenger_email,
+                    trip_route=route,
+                    departure_time=departure_str,
+                    seat_number=ticket.seat_number,
+                    fare_ghs=float(ticket.fare_ghs),
+                    payment_ref=ticket.payment_ref,
+                    company_name=company_obj.name,
+                )
+        except Exception as exc:  # noqa: BLE001
+            # Email errors must never fail payment processing, but log
+            # them so Sentry surfaces delivery problems.
+            logger.warning(
+                "webhook.ticket_email_failed",
+                ticket_id=ticket.id,
+                error=str(exc),
+            )
+
+        # Live tracking-link SMS — fallback path in case the synchronous
+        # verify-payment call never ran (passenger closed the tab early).
+        # Idempotent via tracking_link_sent_at.
+        if ticket.tracking_link_sent_at is None and trip_obj is not None:
             try:
-                trip_result = await db.execute(
-                    select(Trip)
-                    .where(Trip.id == ticket.trip_id)
-                    .options(
-                        selectinload(Trip.departure_station),
-                        selectinload(Trip.destination_station),
-                    )
+                dep_name = trip_obj.departure_station.name if trip_obj.departure_station else "?"
+                dest_name = (
+                    trip_obj.destination_station.name if trip_obj.destination_station else "?"
                 )
-                trip_obj = trip_result.scalar_one_or_none()
-                company_result = await db.execute(
-                    select(Company).where(Company.id == ticket.company_id)
+                url = f"{settings.public_app_url}/track/bus/{trip_obj.id}"
+                message = msg_live_tracking_link(dep_name, dest_name, url)
+                ticket.tracking_link_sent_at = datetime.now(UTC)
+                await dispatch_sms(
+                    db, None, ticket.passenger_phone, message, "live_tracking_link"
                 )
-                company_obj = company_result.scalar_one_or_none()
-                if trip_obj and company_obj:
-                    route = (
-                        f"{trip_obj.departure_station.name} → {trip_obj.destination_station.name}"
-                    )
-                    departure_str = trip_obj.departure_time.strftime("%d %b %Y %H:%M")
-                    await send_ticket_email(
-                        passenger_name=ticket.passenger_name,
-                        passenger_email=ticket.passenger_email,
-                        trip_route=route,
-                        departure_time=departure_str,
-                        seat_number=ticket.seat_number,
-                        fare_ghs=float(ticket.fare_ghs),
-                        payment_ref=ticket.payment_ref,
-                        company_name=company_obj.name,
-                    )
             except Exception as exc:  # noqa: BLE001
-                # Email errors must never fail payment processing, but log
-                # them so Sentry surfaces delivery problems.
                 logger.warning(
-                    "webhook.ticket_email_failed",
+                    "webhook.tracking_link_sms_failed",
                     ticket_id=ticket.id,
                     error=str(exc),
                 )

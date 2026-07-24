@@ -99,3 +99,44 @@ class TestAuthenticateUser:
         await db.flush()
         user = await authenticate_user(db, "clerk@test.io", "testpass123")
         assert user is None
+
+    @pytest.mark.asyncio
+    async def test_valid_phone_returns_user(self, db, clerk_user):
+        user = await authenticate_user(db, "233541234567", "testpass123")
+        assert user is not None
+        assert user.id == clerk_user.id
+
+    @pytest.mark.asyncio
+    async def test_local_format_phone_returns_user(self, db, clerk_user):
+        user = await authenticate_user(db, "0541234567", "testpass123")
+        assert user is not None
+        assert user.id == clerk_user.id
+
+    @pytest.mark.asyncio
+    async def test_plus_e164_phone_returns_user(self, db, clerk_user):
+        user = await authenticate_user(db, "+233541234567", "testpass123")
+        assert user is not None
+        assert user.id == clerk_user.id
+
+    @pytest.mark.asyncio
+    async def test_phone_wrong_password_returns_none(self, db, clerk_user):
+        user = await authenticate_user(db, "233541234567", "wrongpassword")
+        assert user is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_phone_returns_none(self, db):
+        user = await authenticate_user(db, "233551112222", "anything")
+        assert user is None
+
+    @pytest.mark.asyncio
+    async def test_inactive_user_by_phone_returns_none(self, db, clerk_user):
+        clerk_user.is_active = False
+        await db.flush()
+        user = await authenticate_user(db, "233541234567", "testpass123")
+        assert user is None
+
+    @pytest.mark.asyncio
+    async def test_unparseable_identifier_returns_none(self, db):
+        """Not phone-shaped and not a matching email — should not raise."""
+        user = await authenticate_user(db, "not-an-identifier", "anything")
+        assert user is None

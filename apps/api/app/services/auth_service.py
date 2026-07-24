@@ -1,12 +1,14 @@
+import contextlib
 from datetime import UTC, datetime, timedelta
 
 from jose import jwt
 from passlib.context import CryptContext
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.user import User
+from app.utils.phone import normalize_gh_phone
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -43,8 +45,15 @@ def create_refresh_token(user: User) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
-    result = await db.execute(select(User).where(User.email == email, User.is_active == True))  # noqa: E712
+async def authenticate_user(db: AsyncSession, identifier: str, password: str) -> User | None:
+    """Authenticate by email OR phone number (Ghana formats, normalized before comparison)."""
+    conditions = [User.email == identifier]
+    with contextlib.suppress(ValueError):
+        conditions.append(User.phone == normalize_gh_phone(identifier))
+
+    result = await db.execute(
+        select(User).where(or_(*conditions), User.is_active == True)  # noqa: E712
+    )
     user = result.scalar_one_or_none()
     if not user or not verify_password(password, user.hashed_password):
         return None

@@ -25,6 +25,8 @@ interface TicketDetail {
   destination_station: string | null;
   departure_time: string | null;
   vehicle_plate: string | null;
+  pickup_station: string | null;
+  pickup_time: string | null;
 }
 
 /** Generate a deterministic fake barcode pattern from a number */
@@ -73,6 +75,15 @@ export default async function TicketDetailPage({
     : "—";
   const timeStr = departure
     ? departure.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+  const pickupTime = ticket.pickup_time ? new Date(ticket.pickup_time) : null;
+  const pickupStr = ticket.pickup_station
+    ? `${ticket.pickup_station}${
+        pickupTime
+          ? ` (${pickupTime.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })})`
+          : ""
+      }`
     : "—";
 
   const bars = barcodeStripes(ticket.id);
@@ -132,7 +143,7 @@ export default async function TicketDetailPage({
         <div className="flex">
 
           {/* ══ LEFT / MAIN BODY ══════════════════════════════════════ */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-w-0">
 
             {/* Header bar */}
             <div
@@ -148,7 +159,7 @@ export default async function TicketDetailPage({
             </div>
 
             {/* Body */}
-            <div className="flex flex-1 px-4 py-4 gap-4">
+            <div className="flex flex-1 px-4 py-4 gap-4 min-w-0">
 
               {/* Bus icon */}
               <div className="flex items-center justify-center pr-3"
@@ -169,11 +180,12 @@ export default async function TicketDetailPage({
               </div>
 
               {/* Main fields */}
-              <div className="flex-1 space-y-2.5">
+              <div className="flex-1 space-y-2.5 min-w-0">
                 <TicketField label="DATE" value={dateStr} accent={accent} />
                 <TicketField label="TIME" value={timeStr} accent={accent} />
                 <TicketField label="FROM" value={ticket.departure_station ?? "—"} accent={accent} />
                 <TicketField label="TO" value={ticket.destination_station ?? "—"} accent={accent} />
+                <TicketField label="PICKUP" value={pickupStr} accent={accent} />
               </div>
 
               {/* Right side boxes */}
@@ -257,6 +269,7 @@ export default async function TicketDetailPage({
               <StubField label="TIME" value={timeStr} accent={accent} />
               <StubField label="FROM" value={ticket.departure_station ?? "—"} accent={accent} />
               <StubField label="TO" value={ticket.destination_station ?? "—"} accent={accent} />
+              <StubField label="PICKUP" value={pickupStr} accent={accent} />
               <div className="pt-1">
                 <p className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: accent }}>
                   Passenger
@@ -325,7 +338,7 @@ function TicketField({
   return (
     <div className="flex items-center gap-2">
       <span
-        className="text-[10px] font-bold uppercase tracking-wider w-10 shrink-0"
+        className="text-[10px] font-bold uppercase tracking-wider w-14 shrink-0"
         style={{ color: accent }}
       >
         {label}

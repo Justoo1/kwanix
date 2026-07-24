@@ -43,6 +43,7 @@ from app.routers import (
 from app.services.billing_service import run_subscription_sweeper, run_webhook_retry_sweeper
 from app.services.livetrack_service import run_dead_vehicle_sweeper
 from app.services.transaction_fee_service import run_transaction_fee_sweeper
+from app.services.trip_reminder_service import run_trip_reminder_sweeper
 
 logger = structlog.get_logger()
 
@@ -54,11 +55,13 @@ async def lifespan(app: FastAPI):
     webhook_sweeper = asyncio.create_task(run_webhook_retry_sweeper(SessionLocal))
     fee_sweeper = asyncio.create_task(run_transaction_fee_sweeper(SessionLocal))
     dead_vehicle_sweeper = asyncio.create_task(run_dead_vehicle_sweeper(SessionLocal))
+    trip_reminder_sweeper = asyncio.create_task(run_trip_reminder_sweeper(SessionLocal))
     yield
     subscription_sweeper.cancel()
     webhook_sweeper.cancel()
     fee_sweeper.cancel()
     dead_vehicle_sweeper.cancel()
+    trip_reminder_sweeper.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await subscription_sweeper
     with contextlib.suppress(asyncio.CancelledError):
@@ -67,6 +70,8 @@ async def lifespan(app: FastAPI):
         await fee_sweeper
     with contextlib.suppress(asyncio.CancelledError):
         await dead_vehicle_sweeper
+    with contextlib.suppress(asyncio.CancelledError):
+        await trip_reminder_sweeper
     logger.info("Kwanix API shutting down")
 
 
