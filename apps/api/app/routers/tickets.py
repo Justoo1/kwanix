@@ -15,8 +15,9 @@ from app.integrations.arkesel import send_sms
 from app.integrations.paystack import initialize_transaction, refund_transaction
 from app.models.company import Company
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
-from app.models.trip import Trip, TripStatus
+from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
+from app.services.pickup_service import resolve_pickup
 from app.services.qr_service import generate_qr_png_bytes
 from app.utils.phone import normalize_gh_phone
 
@@ -31,6 +32,7 @@ class CreateTicketRequest(BaseModel):
     passenger_phone: str = Field(..., max_length=20)
     seat_number: int
     fare_ghs: float
+    pickup_station_id: int | None = None
 
     @field_validator("passenger_phone", mode="before")
     @classmethod
@@ -65,6 +67,8 @@ class TicketDetailResponse(TicketResponse):
     departure_time: str | None = None
     vehicle_plate: str | None = None
     refund_ref: str | None = None
+    pickup_station: str | None = None
+    pickup_time: str | None = None
 
 
 @router.get("", response_model=list[TicketResponse])
@@ -104,7 +108,9 @@ async def create_ticket(
 ):
     # Validate trip exists and is accepting passengers
     trip_result = await db.execute(
-        select(Trip).where(Trip.id == body.trip_id).options(selectinload(Trip.vehicle))
+        select(Trip)
+        .where(Trip.id == body.trip_id)
+        .options(selectinload(Trip.vehicle), selectinload(Trip.stops))
     )
     trip = trip_result.scalar_one_or_none()
     if trip is None:
@@ -114,6 +120,11 @@ async def create_ticket(
             status_code=400,
             detail=f"Trip is not accepting passengers (status: {trip.status.value})",
         )
+
+    pickup_station_id = body.pickup_station_id or trip.departure_station_id
+    valid_pickup_ids = {trip.departure_station_id, *(s.station_id for s in trip.stops)}
+    if pickup_station_id not in valid_pickup_ids:
+        raise HTTPException(status_code=400, detail="Invalid pickup point for this trip")
 
     # Check vehicle capacity — count non-cancelled tickets
     count_result = await db.execute(
@@ -168,6 +179,7 @@ async def create_ticket(
         fare_ghs=body.fare_ghs,
         source=TicketSource.counter,
         payment_status=PaymentStatus.pending,
+        pickup_station_id=pickup_station_id,
     )
     db.add(ticket)
     await db.commit()
@@ -416,6 +428,7 @@ async def get_ticket(
             selectinload(Ticket.trip).selectinload(Trip.departure_station),
             selectinload(Ticket.trip).selectinload(Trip.destination_station),
             selectinload(Ticket.trip).selectinload(Trip.vehicle),
+            selectinload(Ticket.trip).selectinload(Trip.stops).selectinload(TripStop.station),
         )
     )
     ticket = result.scalar_one_or_none()
@@ -425,6 +438,7 @@ async def get_ticket(
     # Fetch company for brand_color
     company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
+    pickup_station, pickup_time = resolve_pickup(ticket, ticket.trip)
 
     detail = TicketDetailResponse(
         id=ticket.id,
@@ -442,6 +456,8 @@ async def get_ticket(
         departure_time=ticket.trip.departure_time.isoformat() if ticket.trip else None,
         vehicle_plate=ticket.trip.vehicle.plate_number if ticket.trip else None,
         refund_ref=ticket.refund_ref,
+        pickup_station=pickup_station,
+        pickup_time=pickup_time.isoformat() if pickup_time else None,
     )
     return detail
 

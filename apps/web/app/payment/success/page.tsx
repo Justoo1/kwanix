@@ -21,6 +21,8 @@ interface PublicTicket {
   vehicle_plate: string | null;
   company_name: string | null;
   brand_color: string | null;
+  pickup_station: string | null;
+  pickup_time: string | null;
 }
 
 /** Parse ticket ID from reference format: KX-{ticket_id}-{hex} */
@@ -176,6 +178,15 @@ function PaymentSuccessContent() {
     ? departure.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })
     : "—";
 
+  const pickupTime = ticket.pickup_time ? new Date(ticket.pickup_time) : null;
+  const pickupStr = ticket.pickup_station
+    ? `${ticket.pickup_station}${
+        pickupTime
+          ? ` (${pickupTime.toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })})`
+          : ""
+      }`
+    : "—";
+
   return (
     <div className="min-h-screen bg-zinc-50">
       {header}
@@ -194,10 +205,11 @@ function PaymentSuccessContent() {
           className="rounded-2xl overflow-hidden shadow-lg"
           style={{ background: lightBg, border: `1.5px solid ${accent}30` }}
         >
-          <div className="flex">
+          {/* On mobile: stack vertically. On sm+: side-by-side (original layout). */}
+          <div className="flex flex-col sm:flex-row">
 
-            {/* ══ LEFT / MAIN BODY ══ */}
-            <div className="flex-1 flex flex-col">
+            {/* ══ MAIN BODY ══ */}
+            <div className="flex-1 flex flex-col min-w-0">
 
               {/* Header bar */}
               <div
@@ -213,14 +225,14 @@ function PaymentSuccessContent() {
               </div>
 
               {/* Body */}
-              <div className="flex flex-1 px-4 py-4 gap-4">
+              <div className="flex flex-1 px-4 py-4 gap-3 min-w-0">
 
                 {/* Bus icon */}
                 <div
-                  className="flex items-center justify-center pr-3"
+                  className="flex items-center justify-center pr-3 shrink-0"
                   style={{ borderRight: `1.5px dashed ${accent}50` }}
                 >
-                  <svg viewBox="0 0 64 64" className="w-16 h-16 shrink-0" fill={accent}>
+                  <svg viewBox="0 0 64 64" className="w-12 h-12 sm:w-16 sm:h-16" fill={accent}>
                     <rect x="4" y="10" width="56" height="34" rx="6" />
                     <rect x="8" y="14" width="22" height="14" rx="2" fill="white" />
                     <rect x="34" y="14" width="22" height="14" rx="2" fill="white" />
@@ -232,15 +244,16 @@ function PaymentSuccessContent() {
                 </div>
 
                 {/* Main fields */}
-                <div className="flex-1 space-y-2.5">
+                <div className="flex-1 space-y-2 min-w-0">
                   <TField label="DATE"  value={dateStr} accent={accent} />
                   <TField label="TIME"  value={timeStr} accent={accent} />
                   <TField label="FROM"  value={ticket.departure_station ?? "—"} accent={accent} />
                   <TField label="TO"    value={ticket.destination_station ?? "—"} accent={accent} />
+                  <TField label="PICKUP" value={pickupStr} accent={accent} />
                 </div>
 
                 {/* Right side boxes */}
-                <div className="flex flex-col gap-3 justify-center">
+                <div className="flex flex-col gap-2 justify-center shrink-0">
                   <TBox label="Bus No."  value={ticket.vehicle_plate ?? "—"} accent={accent} />
                   <TBox label="Seat No." value={String(ticket.seat_number)} accent={accent} large />
                   <TBox label="Fare"     value={`GHS ${Number(ticket.fare_ghs).toFixed(2)}`} accent={accent} />
@@ -255,16 +268,26 @@ function PaymentSuccessContent() {
                 <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: accent }}>
                   VALID
                 </span>
-                <span className="text-xs font-mono text-zinc-500">{reference}</span>
+                <span className="text-xs font-mono text-zinc-500 truncate mx-2">{reference}</span>
                 <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
                   PAID
                 </span>
               </div>
             </div>
 
-            {/* ══ PERFORATED DIVIDER ══ */}
+            {/* ══ PERFORATED DIVIDER — horizontal on mobile, vertical on sm+ ══ */}
+            {/* Mobile: horizontal dashed line */}
             <div
-              className="flex flex-col items-center justify-between py-2 px-0 select-none"
+              className="flex sm:hidden items-center select-none"
+              style={{ background: `${accent}10` }}
+            >
+              <div className="w-4 h-4 rounded-full shrink-0 -ml-2" style={{ background: lightBg }} />
+              <div className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${accent}40` }} />
+              <div className="w-4 h-4 rounded-full shrink-0 -mr-2" style={{ background: lightBg }} />
+            </div>
+            {/* Desktop: vertical dashed line */}
+            <div
+              className="hidden sm:flex flex-col items-center justify-between py-2 px-0 select-none"
               style={{ width: "22px", background: `${accent}10` }}
             >
               <div className="w-3 h-3 rounded-full" style={{ background: `${accent}30`, marginLeft: "-12px", marginTop: "-8px" }} />
@@ -272,38 +295,45 @@ function PaymentSuccessContent() {
               <div className="w-3 h-3 rounded-full" style={{ background: `${accent}30`, marginLeft: "-12px", marginBottom: "-8px" }} />
             </div>
 
-            {/* ══ RIGHT STUB — QR code ══ */}
-            <div className="flex flex-col" style={{ width: "150px", background: midBg }}>
+            {/* ══ STUB — QR code ══ */}
+            {/* sm+: fixed-width column; mobile: full-width with fields + QR side by side */}
+            <div className="flex flex-col sm:w-[150px]" style={{ background: midBg }}>
 
               {/* Stub header */}
               <div className="px-3 py-2 text-center" style={{ background: accent }}>
-                <p className="text-white font-bold text-[11px] tracking-widest uppercase leading-tight">Passenger</p>
-                <p className="text-white font-bold text-[11px] tracking-widest uppercase leading-tight">Ticket</p>
-              </div>
-
-              {/* Stub fields */}
-              <div className="flex-1 px-3 py-3 space-y-2">
-                <TStub label="DATE"      value={dateStr} accent={accent} />
-                <TStub label="TIME"      value={timeStr} accent={accent} />
-                <TStub label="FROM"      value={ticket.departure_station ?? "—"} accent={accent} />
-                <TStub label="TO"        value={ticket.destination_station ?? "—"} accent={accent} />
-                <div className="pt-1">
-                  <p className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: accent }}>Passenger</p>
-                  <p className="text-[10px] font-semibold text-zinc-800 truncate">{ticket.passenger_name}</p>
-                </div>
-              </div>
-
-              {/* QR code */}
-              <div className="px-3 pb-3 flex flex-col items-center gap-1">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${API_BASE}/api/v1/public/tickets/${ticket.id}/qr`}
-                  alt="Boarding QR"
-                  className="w-full rounded bg-white p-1"
-                />
-                <p className="text-[8px] font-mono text-zinc-500">
-                  {String(ticket.id).padStart(8, "0")}
+                <p className="text-white font-bold text-[11px] tracking-widest uppercase leading-tight">
+                  Passenger Ticket
                 </p>
+              </div>
+
+              {/* Always stacked: fields on top, QR below */}
+              <div className="flex flex-col flex-1 gap-3 px-3 py-3">
+
+                {/* Stub fields — two-column grid on mobile for compactness */}
+                <div className="grid grid-cols-2 sm:grid-cols-1 gap-x-4 gap-y-2">
+                  <TStub label="DATE"      value={dateStr} accent={accent} />
+                  <TStub label="TIME"      value={timeStr} accent={accent} />
+                  <TStub label="FROM"      value={ticket.departure_station ?? "—"} accent={accent} />
+                  <TStub label="TO"        value={ticket.destination_station ?? "—"} accent={accent} />
+                  <TStub label="PICKUP"    value={pickupStr} accent={accent} />
+                  <div className="col-span-2 sm:col-span-1 pt-1">
+                    <p className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: accent }}>Passenger</p>
+                    <p className="text-[10px] font-semibold text-zinc-800 truncate">{ticket.passenger_name}</p>
+                  </div>
+                </div>
+
+                {/* QR code — full width, larger on mobile */}
+                <div className="flex flex-col items-center gap-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${API_BASE}/api/v1/public/tickets/${ticket.id}/qr`}
+                    alt="Boarding QR"
+                    className="w-full max-w-[180px] sm:max-w-full rounded bg-white p-1.5"
+                  />
+                  <p className="text-[8px] font-mono text-zinc-500">
+                    {String(ticket.id).padStart(8, "0")}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -325,7 +355,7 @@ function PaymentSuccessContent() {
 function TField({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[10px] font-bold uppercase tracking-wider w-10 shrink-0" style={{ color: accent }}>
+      <span className="text-[10px] font-bold uppercase tracking-wider w-14 shrink-0" style={{ color: accent }}>
         {label}
       </span>
       <div className="flex-1 bg-white rounded px-2 py-1 text-xs font-semibold text-zinc-800 truncate" style={{ border: `1px solid ${accent}25` }}>

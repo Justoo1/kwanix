@@ -259,11 +259,10 @@ async function geocodeStation(name: string, address: string): Promise<GeoResult[
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=gh`,
-        { headers: { "Accept-Language": "en" } }
+        `/api/geocode?mode=search&q=${encodeURIComponent(q)}&limit=3&countrycodes=gh`
       );
       const data: NominatimResult[] = await res.json();
-      if (data.length > 0) {
+      if (Array.isArray(data) && data.length > 0) {
         return data.map((r) => ({
           lat: parseFloat(r.lat).toFixed(6),
           lng: parseFloat(r.lon).toFixed(6),
@@ -668,8 +667,13 @@ function CreateStationDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={open} onOpenChange={onOpenChange} modal={!mapOpen}>
+        <DialogContent
+          className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => { if (mapOpen) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (mapOpen) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (mapOpen) e.preventDefault(); }}
+        >
           <DialogHeader>
             <DialogTitle>Create station</DialogTitle>
             <DialogDescription>Add a new origin or destination to your network.</DialogDescription>
@@ -779,8 +783,13 @@ function EditStationDialog({ station, open, onOpenChange }: { station: StationRe
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={open} onOpenChange={onOpenChange} modal={!mapOpen}>
+        <DialogContent
+          className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => { if (mapOpen) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (mapOpen) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (mapOpen) e.preventDefault(); }}
+        >
           <DialogHeader>
             <DialogTitle>Edit station</DialogTitle>
             <DialogDescription>Update details for <strong>{station.name}</strong>.</DialogDescription>

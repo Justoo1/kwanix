@@ -166,6 +166,27 @@ export default function DriverDashboardClient({
           </span>
         </div>
 
+        {/* Route stops / pickup points */}
+        {trip.stops.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400">
+            <span className="font-bold uppercase tracking-wider text-zinc-500">Stops:</span>
+            {trip.stops.map((s, i) => (
+              <span key={s.station_id} className="flex items-center gap-2">
+                {i > 0 && <span className="text-zinc-600">→</span>}
+                <span>
+                  {s.station_name}
+                  {s.eta && (
+                    <span className="text-zinc-500">
+                      {" "}
+                      ({new Date(s.eta).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })})
+                    </span>
+                  )}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Boarding progress — loaded from manifest */}
         <BoardingProgressBar tripId={trip.id} total={trip.passenger_count} />
       </div>
@@ -485,6 +506,14 @@ function PassengerCard({
       <div className="flex-1 min-w-0">
         <p className="font-bold text-zinc-900 truncate text-sm">{p.passenger_name}</p>
         <p className="text-xs text-zinc-400 mt-0.5">{p.passenger_phone}</p>
+        {p.pickup_station && (
+          <p className="text-xs text-zinc-400 mt-0.5 truncate">
+            Pickup: {p.pickup_station}
+            {p.pickup_time && (
+              <> · {new Date(p.pickup_time).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })}</>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Status / action */}

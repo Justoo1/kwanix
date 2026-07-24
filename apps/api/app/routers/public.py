@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
@@ -12,12 +12,14 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.dependencies.auth import get_db_public
+from app.integrations.arkesel import dispatch_sms, msg_live_tracking_link
 from app.integrations.paystack import initialize_transaction, verify_transaction
 from app.middleware.rate_limit import limiter
 from app.models.company import Company
 from app.models.station import Station
 from app.models.ticket import PaymentStatus, Ticket, TicketSource, TicketStatus
-from app.models.trip import Trip, TripStatus
+from app.models.trip import Trip, TripStatus, TripStop
+from app.services.pickup_service import resolve_pickup
 from app.services.qr_service import generate_qr_png_bytes
 from app.utils.phone import normalize_gh_phone
 
@@ -45,6 +47,12 @@ def _is_active_ticket():
 # ── Response schemas ───────────────────────────────────────────────────────────
 
 
+class PickupOption(BaseModel):
+    station_id: int
+    station_name: str
+    pickup_time: str | None
+
+
 class PublicTripResponse(BaseModel):
     id: int
     departure_station_name: str
@@ -58,6 +66,7 @@ class PublicTripResponse(BaseModel):
     brand_color: str | None
     booking_open: bool
     status: str
+    pickup_options: list[PickupOption] = []
 
 
 class SeatMapResponse(BaseModel):
@@ -70,6 +79,7 @@ class BookRequest(BaseModel):
     passenger_phone: str = Field(..., max_length=20)
     seat_number: int
     passenger_email: str | None = None
+    pickup_station_id: int | None = None
 
     @field_validator("passenger_phone", mode="before")
     @classmethod
@@ -99,6 +109,8 @@ class PublicTicketResponse(BaseModel):
     vehicle_plate: str | None
     company_name: str | None
     brand_color: str | None
+    pickup_station: str | None = None
+    pickup_time: str | None = None
 
 
 class PublicRouteResult(BaseModel):
@@ -358,6 +370,26 @@ async def list_public_trips(
     return output
 
 
+def _pickup_options(trip: Trip) -> list[PickupOption]:
+    """Departure station (implicit first option) followed by any configured intermediate stops."""
+    options = [
+        PickupOption(
+            station_id=trip.departure_station_id,
+            station_name=trip.departure_station.name if trip.departure_station else "",
+            pickup_time=trip.departure_time.isoformat() if trip.departure_time else None,
+        )
+    ]
+    for stop in trip.stops:
+        options.append(
+            PickupOption(
+                station_id=stop.station_id,
+                station_name=stop.station.name if stop.station else "",
+                pickup_time=stop.eta.isoformat() if stop.eta else None,
+            )
+        )
+    return options
+
+
 @router.get("/trips/{trip_id}", response_model=PublicTripResponse)
 @limiter.limit("100/minute")
 async def get_public_trip(
@@ -375,6 +407,7 @@ async def get_public_trip(
             selectinload(Trip.destination_station),
             selectinload(Trip.company),
             selectinload(Trip.tickets),
+            selectinload(Trip.stops).selectinload(TripStop.station),
         )
     )
     trip = result.scalar_one_or_none()
@@ -408,6 +441,7 @@ async def get_public_trip(
         brand_color=trip.company.brand_color,
         booking_open=trip.booking_open,
         status=trip.status.value,
+        pickup_options=_pickup_options(trip),
     )
 
 
@@ -462,7 +496,9 @@ async def book_ticket(
     db: AsyncSession = Depends(get_db_public),
 ):
     """Passenger books a seat and gets a Paystack payment URL."""
-    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip_result = await db.execute(
+        select(Trip).where(Trip.id == trip_id).options(selectinload(Trip.stops))
+    )
     trip = trip_result.scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -475,6 +511,11 @@ async def book_ticket(
         )
     if trip.price_ticket_base is None:
         raise HTTPException(status_code=400, detail="Trip has no base fare set")
+
+    pickup_station_id = body.pickup_station_id or trip.departure_station_id
+    valid_pickup_ids = {trip.departure_station_id, *(s.station_id for s in trip.stops)}
+    if pickup_station_id not in valid_pickup_ids:
+        raise HTTPException(status_code=400, detail="Invalid pickup point for this trip")
 
     # Cancel expired holds for this seat (lazy expiry)
     await db.execute(
@@ -517,6 +558,7 @@ async def book_ticket(
         source=TicketSource.online,
         payment_status=PaymentStatus.pending,
         booking_expires_at=expires_at,
+        pickup_station_id=pickup_station_id,
     )
     db.add(ticket)
     await db.flush()  # get ticket.id before commit
@@ -545,6 +587,28 @@ async def book_ticket(
     )
 
 
+def _resolve_pickup(ticket: Ticket, trip: Trip | None) -> tuple[str | None, str | None]:
+    """Public-API wrapper: same as resolve_pickup, but returns an ISO-formatted time string."""
+    name, when = resolve_pickup(ticket, trip)
+    return (name, when.isoformat() if when else None)
+
+
+def _queue_tracking_link_sms(
+    background_tasks: BackgroundTasks, db: AsyncSession, ticket: Ticket, trip: Trip | None
+) -> None:
+    """Send the live bus-tracking link once a ticket is confirmed paid (idempotent)."""
+    if trip is None or ticket.tracking_link_sent_at is not None:
+        return
+    dep_name = trip.departure_station.name if trip.departure_station else "?"
+    dest_name = trip.destination_station.name if trip.destination_station else "?"
+    url = f"{settings.public_app_url}/track/bus/{trip.id}"
+    message = msg_live_tracking_link(dep_name, dest_name, url)
+    ticket.tracking_link_sent_at = datetime.now(UTC)
+    background_tasks.add_task(
+        dispatch_sms, db, None, ticket.passenger_phone, message, "live_tracking_link"
+    )
+
+
 @router.get("/tickets/{ticket_id}", response_model=PublicTicketResponse)
 @limiter.limit("30/minute")
 async def get_public_ticket(
@@ -561,6 +625,7 @@ async def get_public_ticket(
             selectinload(Ticket.trip).selectinload(Trip.departure_station),
             selectinload(Ticket.trip).selectinload(Trip.destination_station),
             selectinload(Ticket.trip).selectinload(Trip.vehicle),
+            selectinload(Ticket.trip).selectinload(Trip.stops).selectinload(TripStop.station),
         )
     )
     ticket = result.scalar_one_or_none()
@@ -569,6 +634,7 @@ async def get_public_ticket(
 
     company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
+    pickup_station, pickup_time = _resolve_pickup(ticket, ticket.trip)
 
     return PublicTicketResponse(
         id=ticket.id,
@@ -585,6 +651,8 @@ async def get_public_ticket(
         ),
         company_name=company.name if company else None,
         brand_color=company.brand_color if company else None,
+        pickup_station=pickup_station,
+        pickup_time=pickup_time,
     )
 
 
@@ -593,6 +661,7 @@ async def get_public_ticket(
 async def verify_payment(
     request: Request,
     reference: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_public),
 ):
     """
@@ -622,11 +691,17 @@ async def verify_payment(
             selectinload(Ticket.trip).selectinload(Trip.departure_station),
             selectinload(Ticket.trip).selectinload(Trip.destination_station),
             selectinload(Ticket.trip).selectinload(Trip.vehicle),
+            selectinload(Ticket.trip).selectinload(Trip.stops).selectinload(TripStop.station),
         )
     )
     ticket = result2.scalar_one()
     company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
+    pickup_station, pickup_time = _resolve_pickup(ticket, ticket.trip)
+
+    if ticket.payment_status == PaymentStatus.paid:
+        _queue_tracking_link_sms(background_tasks, db, ticket, ticket.trip)
+        await db.commit()
 
     return PublicTicketResponse(
         id=ticket.id,
@@ -643,6 +718,8 @@ async def verify_payment(
         ),
         company_name=company.name if company else None,
         brand_color=company.brand_color if company else None,
+        pickup_station=pickup_station,
+        pickup_time=pickup_time,
     )
 
 
