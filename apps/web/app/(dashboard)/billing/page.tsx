@@ -25,6 +25,8 @@ interface SubscriptionStatus {
   has_payment_method: boolean;
   has_subaccount: boolean;
   billing_email: string | null;
+  billing_mode: "subscription" | "per_transaction";
+  transaction_fee_pct: number;
 }
 
 interface Plan {
@@ -104,7 +106,26 @@ export default async function BillingPage() {
       </div>
 
       {/* Current plan banner */}
-      {billingStatus && (
+      {billingStatus && billingStatus.billing_mode === "per_transaction" ? (
+        <div className="bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-5 border-l-4 border-l-indigo-500 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex rounded-xl p-2.5 bg-indigo-100 text-indigo-700">
+              <CreditCard className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-[14px] font-bold text-foreground">Pay as you go</p>
+                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-indigo-100 text-indigo-800">
+                  {billingStatus.transaction_fee_pct}% per transaction
+                </span>
+              </div>
+              <p className="text-[12px] text-muted-foreground mt-0.5">
+                Charged on every ticket sold and parcel logged — no subscription plan required.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : billingStatus && (
         <div className={`bg-card rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-5 border-l-4 ${statusInfo.accent} flex items-start justify-between gap-4`}>
           <div className="flex items-center gap-3">
             <div className={`inline-flex rounded-xl p-2.5 ${statusInfo.pill}`}>
@@ -138,10 +159,12 @@ export default async function BillingPage() {
       )}
 
       {/* Action buttons (BillingClient handles payment/upgrade actions) */}
-      <BillingClient billingStatus={billingStatus} />
+      {billingStatus?.billing_mode !== "per_transaction" && (
+        <BillingClient billingStatus={billingStatus} />
+      )}
 
       {/* Available plans */}
-      {plans.length > 0 && (
+      {billingStatus?.billing_mode !== "per_transaction" && plans.length > 0 && (
         <section>
           <h2 className="text-[14px] font-bold text-foreground mb-3">Available Plans</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">

@@ -296,11 +296,12 @@ function OperationalStats({ isAdmin }: { userName: string; isAdmin: boolean }) {
 }
 
 // ── Platform config card ──────────────────────────────────────────────────────
+// Billing mode + fee % are per-company now (set on each company's detail page).
+// This only controls the platform-wide default fee % used as a fallback for
+// per_transaction companies that don't have a custom rate set.
 
 interface PlatformConfig {
-  billing_mode: "subscription" | "per_transaction";
-  ticket_fee_ghs: number;
-  parcel_fee_ghs: number;
+  default_fee_pct: number;
 }
 
 function PlatformConfigCard() {
@@ -312,39 +313,25 @@ function PlatformConfigCard() {
     staleTime: 5 * 60_000,
   });
 
-  const [mode, setMode] = useState<string | null>(null);
-  const [ticketFee, setTicketFee] = useState("");
-  const [parcelFee, setParcelFee] = useState("");
+  const [feePct, setFeePct] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
 
   useEffect(() => {
-    if (data && mode === null) {
-      setMode(data.billing_mode);
-      setTicketFee(String(data.ticket_fee_ghs));
-      setParcelFee(String(data.parcel_fee_ghs));
+    if (data && feePct === null) {
+      setFeePct(String(data.default_fee_pct));
     }
-  }, [data, mode]);
-
-  const currentMode = mode ?? data?.billing_mode ?? "subscription";
-  const isPerTx = currentMode === "per_transaction";
+  }, [data, feePct]);
 
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
     setSaveOk(false);
     try {
-      const body: Partial<PlatformConfig> = {
-        billing_mode: currentMode as PlatformConfig["billing_mode"],
-      };
-      if (isPerTx) {
-        body.ticket_fee_ghs = parseFloat(ticketFee);
-        body.parcel_fee_ghs = parseFloat(parcelFee);
-      }
       await clientFetch("admin/platform-config", {
         method: "PATCH",
-        body: JSON.stringify(body),
+        body: JSON.stringify({ default_fee_pct: parseFloat(feePct ?? "0") }),
       });
       await qc.invalidateQueries({ queryKey: ["admin", "platform-config"] });
       setSaveOk(true);
@@ -358,62 +345,26 @@ function PlatformConfigCard() {
   return (
     <div className="rounded-2xl bg-card p-[22px] shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-5">
       <div className="flex items-center justify-between">
-        <span className="text-[15px] font-bold text-foreground">Platform Billing Config</span>
+        <span className="text-[15px] font-bold text-foreground">Platform Default Fee</span>
         {isLoading && <div className="h-4 w-24 animate-pulse rounded bg-muted" />}
       </div>
+      <p className="text-[13px] text-muted-foreground -mt-3">
+        Fallback percentage for per-transaction companies without a custom rate. Billing mode and
+        custom rates are set per company on each company&apos;s detail page.
+      </p>
 
-      {/* Billing mode toggle */}
-      <div className="flex items-center gap-3">
-        <span className="text-[13px] text-muted-foreground">Billing mode:</span>
-        <button
-          onClick={() => setMode(isPerTx ? "subscription" : "per_transaction")}
-          className={cn(
-            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
-            isPerTx ? "bg-primary" : "bg-muted"
-          )}
-        >
-          <span
-            className={cn(
-              "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
-              isPerTx ? "translate-x-6" : "translate-x-1"
-            )}
-          />
-        </button>
-        <span className="text-[13px] font-semibold text-foreground">
-          {isPerTx ? "Per Transaction" : "Subscription"}
-        </span>
-      </div>
-
-      {/* Fee inputs */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-[0.3px] mb-1.5">
-            Ticket fee (GHS)
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={ticketFee}
-            onChange={(e) => setTicketFee(e.target.value)}
-            disabled={!isPerTx}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-        <div>
-          <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-[0.3px] mb-1.5">
-            Parcel fee (GHS)
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={parcelFee}
-            onChange={(e) => setParcelFee(e.target.value)}
-            disabled={!isPerTx}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+      <div className="max-w-50">
+        <label className="block text-[11px] font-medium text-muted-foreground uppercase tracking-[0.3px] mb-1.5">
+          Default fee (%)
+        </label>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={feePct ?? ""}
+          onChange={(e) => setFeePct(e.target.value)}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
       </div>
 
       {saveError && (

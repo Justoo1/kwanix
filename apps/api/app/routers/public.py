@@ -559,6 +559,7 @@ async def book_ticket(
         payment_status=PaymentStatus.pending,
         booking_expires_at=expires_at,
         pickup_station_id=pickup_station_id,
+        payment_method="online",
     )
     db.add(ticket)
     await db.flush()  # get ticket.id before commit
@@ -569,12 +570,34 @@ async def book_ticket(
     callback_url = f"{settings.public_app_url}/payment/success?reference={reference}"
     cancel_action = f"{settings.public_app_url}/payment/cancelled"
 
+    # Platform fee split for per_transaction-billed companies (same mechanism as
+    # counter momo/card sales — the online booking still goes through Paystack).
+    from app.services.transaction_fee_service import (  # noqa: PLC0415
+        compute_fee_ghs,
+        effective_fee_pct,
+        get_platform_config,
+    )
+
+    company_result = await db.execute(select(Company).where(Company.id == trip.company_id))
+    company = company_result.scalar_one_or_none()
+    platform_fee_pesewas: int | None = None
+    if (
+        company is not None
+        and company.billing_mode == "per_transaction"
+        and company.paystack_subaccount_code
+    ):
+        platform = await get_platform_config(db)
+        pct = effective_fee_pct(company, platform)
+        platform_fee_pesewas = int(compute_fee_ghs(trip.price_ticket_base, pct) * 100)
+
     data = await initialize_transaction(
         amount_kobo=amount_pesewas,
         email=email,
         reference=reference,
         callback_url=callback_url,
         cancel_action=cancel_action,
+        subaccount=company.paystack_subaccount_code if company else None,
+        transaction_charge=platform_fee_pesewas,
     )
 
     ticket.payment_ref = reference
@@ -700,7 +723,12 @@ async def verify_payment(
     pickup_station, pickup_time = _resolve_pickup(ticket, ticket.trip)
 
     if ticket.payment_status == PaymentStatus.paid:
+        from app.services.transaction_fee_service import (  # noqa: PLC0415
+            record_ticket_fee,
+        )
+
         _queue_tracking_link_sms(background_tasks, db, ticket, ticket.trip)
+        await record_ticket_fee(db, ticket, company)
         await db.commit()
 
     return PublicTicketResponse(

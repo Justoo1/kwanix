@@ -108,13 +108,8 @@ async def get_db_for_user(
             company = locked.scalar_one()
             await advance_company_status_if_needed(company, db)
 
-            from app.services.transaction_fee_service import (  # noqa: PLC0415
-                get_platform_config,
-            )
-
-            platform = await get_platform_config(db)
             if (
-                platform.billing_mode == "subscription"
+                company.billing_mode == "subscription"
                 and company.subscription_status == "suspended"
             ):
                 raise HTTPException(

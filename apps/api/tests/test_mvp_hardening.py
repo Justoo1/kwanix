@@ -659,7 +659,7 @@ class TestWebhookEmailLogging:
         # The failure was logged (not silently swallowed)
         mock_logger.warning.assert_called()
         warning_call_kwargs = str(mock_logger.warning.call_args)
-        assert "ticket_email_failed" in warning_call_kwargs
+        assert "ticket_post_payment_step_failed" in warning_call_kwargs
 
 
 # ── FIX 6: Database engine has statement timeout ──────────────────────────────

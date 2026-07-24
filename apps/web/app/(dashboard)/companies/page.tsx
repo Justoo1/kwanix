@@ -7,6 +7,7 @@ import type { CompanyResponse } from "@/lib/definitions";
 
 import CreateCompanyForm from "./create-company-form";
 import PlansManager from "./plans-manager";
+import PlatformFinancials from "./platform-financials";
 
 export default async function CompaniesPage() {
   const session = await getSession();
@@ -96,6 +97,9 @@ export default async function CompaniesPage() {
           </table>
         )}
       </div>
+
+      {/* Platform-wide financial tracking */}
+      <PlatformFinancials />
 
       {/* Subscription plan management */}
       <PlansManager />

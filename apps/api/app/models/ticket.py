@@ -67,6 +67,14 @@ class Ticket(Base, TimestampMixin):
     tracking_link_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # "cash" | "momo" | "card" | "online" — how the passenger paid (or is paying).
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Set once the platform's per-transaction fee has been recorded for this
+    # ticket (either via a Paystack transaction_charge split, or — when the
+    # company has no subaccount linked to split against — via the
+    # TransactionFee ledger, same as cash). Prevents double-recording across
+    # the webhook and synchronous verify paths.
+    fee_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     trip: Mapped["Trip"] = relationship(back_populates="tickets")  # noqa: F821

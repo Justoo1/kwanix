@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid4
 
 import structlog
@@ -19,6 +20,13 @@ from app.models.trip import Trip, TripStatus, TripStop
 from app.models.user import User, UserRole
 from app.services.pickup_service import resolve_pickup
 from app.services.qr_service import generate_qr_png_bytes
+from app.services.transaction_fee_service import (
+    compute_fee_ghs,
+    effective_fee_pct,
+    get_platform_config,
+    record_ticket_fee,
+    schedule_fee_record,
+)
 from app.utils.phone import normalize_gh_phone
 
 logger = structlog.get_logger()
@@ -33,6 +41,7 @@ class CreateTicketRequest(BaseModel):
     seat_number: int
     fare_ghs: float
     pickup_station_id: int | None = None
+    payment_method: Literal["cash", "momo"] = "momo"
 
     @field_validator("passenger_phone", mode="before")
     @classmethod
@@ -53,6 +62,7 @@ class TicketResponse(BaseModel):
     status: str
     payment_status: str
     source: str = "counter"
+    payment_method: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -178,12 +188,32 @@ async def create_ticket(
         seat_number=body.seat_number,
         fare_ghs=body.fare_ghs,
         source=TicketSource.counter,
-        payment_status=PaymentStatus.pending,
+        payment_status=(
+            PaymentStatus.paid if body.payment_method == "cash" else PaymentStatus.pending
+        ),
         pickup_station_id=pickup_station_id,
+        payment_method=body.payment_method,
     )
     db.add(ticket)
     await db.commit()
     await db.refresh(ticket)
+
+    # Cash never touches Paystack, so there's no transaction_charge split to take
+    # the platform's cut automatically — record it as owed instead, collected
+    # later by the daily fee sweeper.
+    if body.payment_method == "cash" and current_user.company_id:
+        company_result = await db.execute(
+            select(Company).where(Company.id == current_user.company_id)
+        )
+        company = company_result.scalar_one_or_none()
+        if company is not None and company.billing_mode == "per_transaction":
+            platform = await get_platform_config(db)
+            pct = effective_fee_pct(company, platform)
+            fee_ghs = compute_fee_ghs(ticket.fare_ghs, pct)
+            ticket.fee_recorded_at = datetime.now(UTC)
+            schedule_fee_record(company.id, "ticket", ticket.id, fee_ghs)
+            await db.commit()
+
     return ticket
 
 
@@ -232,16 +262,15 @@ async def initiate_payment(
     amount_pesewas = int(ticket.fare_ghs * 100)
 
     # Determine platform fee split for per_transaction billing mode
-    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
-
-    platform = await get_platform_config(db)
     platform_fee_pesewas: int | None = None
     if (
-        platform.billing_mode == "per_transaction"
-        and company is not None
+        company is not None
+        and company.billing_mode == "per_transaction"
         and company.paystack_subaccount_code
     ):
-        platform_fee_pesewas = int(platform.ticket_fee_ghs * 100)
+        platform = await get_platform_config(db)
+        pct = effective_fee_pct(company, platform)
+        platform_fee_pesewas = int(compute_fee_ghs(ticket.fare_ghs, pct) * 100)
 
     data = await initialize_transaction(
         amount_kobo=amount_pesewas,
@@ -252,6 +281,7 @@ async def initiate_payment(
     )
 
     ticket.payment_ref = reference
+    ticket.payment_method = "card"
     await db.commit()
 
     return InitiatePaymentResponse(
@@ -293,7 +323,6 @@ async def initiate_ticket_momo_payment(
     notification is sent to the passenger's phone for approval.
     """
     from app.integrations.paystack import charge_mobile_money  # noqa: PLC0415
-    from app.services.transaction_fee_service import get_platform_config  # noqa: PLC0415
     from app.utils.phone import detect_momo_provider, normalize_gh_phone  # noqa: PLC0415
 
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
@@ -316,14 +345,15 @@ async def initiate_ticket_momo_payment(
     company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
     company = company_result.scalar_one_or_none()
 
-    platform = await get_platform_config(db)
     platform_fee_pesewas: int | None = None
     if (
-        platform.billing_mode == "per_transaction"
-        and company is not None
+        company is not None
+        and company.billing_mode == "per_transaction"
         and company.paystack_subaccount_code
     ):
-        platform_fee_pesewas = int(platform.ticket_fee_ghs * 100)
+        platform = await get_platform_config(db)
+        pct = effective_fee_pct(company, platform)
+        platform_fee_pesewas = int(compute_fee_ghs(ticket.fare_ghs, pct) * 100)
 
     reference = f"KX-{ticket.id}-{uuid4().hex[:8]}"
     email = f"{phone_normalized}@kwanix.app"
@@ -400,6 +430,8 @@ async def verify_ticket_payment(
     if gateway_status == "success" and ticket.payment_status != PaymentStatus.paid:
         ticket.payment_status = PaymentStatus.paid
         ticket.booking_expires_at = None
+        company_result = await db.execute(select(Company).where(Company.id == ticket.company_id))
+        await record_ticket_fee(db, ticket, company_result.scalar_one_or_none())
         db.add(ticket)
         await db.commit()
         updated = True
@@ -458,6 +490,7 @@ async def get_ticket(
         refund_ref=ticket.refund_ref,
         pickup_station=pickup_station,
         pickup_time=pickup_time.isoformat() if pickup_time else None,
+        payment_method=ticket.payment_method,
     )
     return detail
 

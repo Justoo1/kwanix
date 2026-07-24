@@ -19,6 +19,8 @@ export type CreateTicketState =
         status: MomoStatus;
         display_text: string;
       };
+      /** Set when the ticket was paid for in cash — no MoMo round-trip needed */
+      paidCash?: boolean;
     }
   | undefined;
 
@@ -85,6 +87,7 @@ export async function createTicket(
   if (!passenger_phone) {
     return { message: "Phone number is required to initiate payment." };
   }
+  const payment_method = (formData.get("payment_method") as string) === "cash" ? "cash" : "momo";
 
   const body = {
     trip_id: Number(formData.get("trip_id")),
@@ -92,6 +95,7 @@ export async function createTicket(
     passenger_phone,
     seat_number: Number(formData.get("seat_number")),
     fare_ghs: Number(formData.get("fare_ghs")),
+    payment_method,
   };
 
   let ticket: TicketResponse;
@@ -124,6 +128,15 @@ export async function createTicket(
   }
 
   revalidatePath("/tickets");
+
+  // Cash sale — the ticket is already marked paid server-side, no payment round-trip.
+  if (payment_method === "cash") {
+    return {
+      ticket_id: ticket.id,
+      seat_number: ticket.seat_number,
+      paidCash: true,
+    };
+  }
 
   // Auto-initiate MoMo payment using the passenger's stored phone number
   try {
